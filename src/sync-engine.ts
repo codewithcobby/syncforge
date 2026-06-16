@@ -18,11 +18,19 @@ function delay(ms: number): Promise<void> {
   });
 }
 
+function isBrowser(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.addEventListener === "function"
+  );
+}
+
 export function createSyncEngine(options: SyncEngineOptions = {}): SyncEngine {
   const storage = options.storage ?? createMemoryStorage();
   const transport = options.transport;
   const retry = options.retry ?? immediateRetryStrategy;
   const maxRetries = options.maxRetries ?? 3;
+  const autoSync = options.autoSync ?? true;
   const emitter = createEventEmitter();
 
   let operations: SyncOperation[] = [];
@@ -91,6 +99,29 @@ export function createSyncEngine(options: SyncEngineOptions = {}): SyncEngine {
     return result;
   }
 
+  async function flush(): Promise<FlushResult> {
+    if (activeFlush) {
+      return activeFlush;
+    }
+
+    activeFlush = runFlush().finally(() => {
+      activeFlush = null;
+    });
+
+    return activeFlush;
+  }
+
+  let handleOnline: (() => void) | null = null;
+
+  if (autoSync && isBrowser()) {
+    handleOnline = () => {
+      if (transport) {
+        void flush().catch(() => {});
+      }
+    };
+    window.addEventListener("online", handleOnline);
+  }
+
   return {
     on: emitter.on.bind(emitter),
     off: emitter.off.bind(emitter),
@@ -140,19 +171,12 @@ export function createSyncEngine(options: SyncEngineOptions = {}): SyncEngine {
       await persist();
     },
 
-    async flush(): Promise<FlushResult> {
-      if (activeFlush) {
-        return activeFlush;
-      }
-
-      activeFlush = runFlush().finally(() => {
-        activeFlush = null;
-      });
-
-      return activeFlush;
-    },
+    flush,
 
     async destroy(): Promise<void> {
+      if (handleOnline && isBrowser()) {
+        window.removeEventListener("online", handleOnline);
+      }
       await hydrate();
       operations = [];
       await persist();
