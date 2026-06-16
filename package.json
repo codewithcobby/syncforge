@@ -1,6 +1,6 @@
 {
   "name": "syncforge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
@@ -35,6 +35,7 @@
     "indexeddb"
   ],
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
