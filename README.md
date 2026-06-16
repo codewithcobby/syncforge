@@ -100,6 +100,51 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 Event payload: `{ type, operation, timestamp }`.
 
+#### Retry strategies
+
+| Factory                             | Options                                             | Description                                                         |
+| ----------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
+| `immediateRetryStrategy`            | —                                                   | No delay between retries (default).                                 |
+| `exponentialBackoffRetryStrategy()` | `baseDelayMs?`, `maxDelayMs?`, `factor?`, `jitter?` | `min(base × factor^attempt, maxDelayMs)`; optional 50%–100% jitter. |
+| `linearBackoffRetryStrategy()`      | `baseDelayMs?`, `maxDelayMs?`                       | `min(base × attempt, maxDelayMs)`; no jitter.                       |
+
+`getDelay(attempt)` receives the post-failure retry count (`operation.retries` after increment). The first failed send passes `attempt: 1`.
+
+With `baseDelayMs: 1_000` and defaults:
+
+| Strategy    | `getDelay(1)` | `getDelay(2)` | `getDelay(3)` |
+| ----------- | ------------- | ------------- | ------------- |
+| Linear      | 1_000 ms      | 2_000 ms      | 3_000 ms      |
+| Exponential | 2_000 ms      | 4_000 ms      | 8_000 ms      |
+
+After a failed `send()`, the engine waits `getDelay(retries)` before `flush()` finishes. The operation stays `pending`; call `flush()` again (or rely on auto sync on reconnect) for the next transport attempt.
+
+```typescript
+import { createSyncEngine, exponentialBackoffRetryStrategy, linearBackoffRetryStrategy } from "syncforge"
+
+const sync = createSyncEngine({
+  transport: myTransport,
+  retry: exponentialBackoffRetryStrategy({
+    baseDelayMs: 1_000,
+    maxDelayMs: 30_000,
+    factor: 2,
+    jitter: true,
+  }),
+  maxRetries: 5,
+})
+
+const syncLinear = createSyncEngine({
+  transport: myTransport,
+  retry: linearBackoffRetryStrategy({
+    baseDelayMs: 1_000,
+    maxDelayMs: 30_000,
+  }),
+  maxRetries: 5,
+})
+```
+
+When `jitter: true` on exponential backoff, the actual delay is randomized between **50% and 100%** of the calculated exponential delay — so repeated failures will not wait for an exact millisecond value. The exact jitter algorithm is not part of the public API and may evolve.
+
 ### Browser example
 
 ```typescript
@@ -431,7 +476,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Lifecycle events
 - [x] Retry strategy interface
 - [x] Automatic sync when back online
-- [ ] Exponential and linear retry strategies
+- [x] Exponential and linear retry strategies
 - [ ] Optimistic updates
 - [ ] React integration
 
