@@ -28,13 +28,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-
-| Status              | Details                                                                       |
-| ------------------- | ----------------------------------------------------------------------------- |
-| Implemented         | Mutation queue, transport adapter, storage adapter, retries, lifecycle events |
-| Tested              | Core engine behavior and flush integration flows                              |
-| Planned before v1.0 | Automatic reconnect sync, IndexedDB storage, framework integrations           |
-
+| Status              | Details                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, retries, lifecycle events |
+| Tested              | Core engine behavior, flush integration, and IndexedDB persistence flows                 |
+| Planned before v1.0 | Automatic reconnect sync, framework integrations                                         |
 
 ## Installation
 
@@ -55,7 +53,7 @@ yarn add syncforge
 The first argument to `mutate()` is an **operation label** your app defines (e.g. `"createOrder"`). SyncForge stores it and passes the full operation to your transport on `flush()`. **Your transport** decides which API to call and how to map `operation.type` and `operation.payload`.
 
 ```typescript
-import { createMemoryStorage, createSyncEngine } from "syncforge"
+import { createIndexedDbStorage, createSyncEngine } from "syncforge"
 
 const transport = {
   async send(operation) {
@@ -75,13 +73,26 @@ const transport = {
 
 const sync = createSyncEngine({
   transport,
-  storage: createMemoryStorage(), // swap for IndexedDB later
+  storage: createIndexedDbStorage({ dbName: "my-app", storeName: "sync-queue" }),
 })
 
 await sync.mutate("createOrder", { customerId: "123", total: 100 })
 
 const result = await sync.flush()
 console.log(result) // { successful: 1, failed: 0 }
+```
+
+`createIndexedDbStorage()` is **browser-only** — it requires IndexedDB (not available in Node.js or SSR). Use `createMemoryStorage()` for tests, scripts, and server environments. Set a unique `dbName` per app on the same origin to avoid queue collisions.
+
+### Node.js and tests
+
+```typescript
+import { createMemoryStorage, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  transport: myTransport,
+  storage: createMemoryStorage(),
+})
 ```
 
 ### Next.js example
@@ -217,9 +228,6 @@ flowchart LR
   Transport -->|REST · GraphQL · tRPC · custom| Backend
 ```
 
-
-
-
 | Layer                 | Responsibility                                                        |
 | --------------------- | --------------------------------------------------------------------- |
 | **Application**       | Calls `mutate()`, `flush()`, and subscribes to events                 |
@@ -227,8 +235,7 @@ flowchart LR
 | **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend           |
 | **Storage Adapter**   | Persists the operation queue across reloads                           |
 | **Backend**           | Your existing API — SyncForge does not replace it                     |
-| **Persistence**       | Memory today; IndexedDB and other adapters planned                    |
-
+| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow       |
 
 ## How it works
 
@@ -272,8 +279,6 @@ sequenceDiagram
   SF-->>App: { successful, failed }
 ```
 
-
-
 ### Operation lifecycle
 
 ```mermaid
@@ -287,10 +292,7 @@ stateDiagram-v2
   failed --> [*]
 ```
 
-
-
 ### API
-
 
 | Method                  | Description                                                             |
 | ----------------------- | ----------------------------------------------------------------------- |
@@ -298,7 +300,6 @@ stateDiagram-v2
 | `flush()`               | Send pending operations via transport; returns `{ successful, failed }` |
 | `getPending()`          | List operations still waiting to sync                                   |
 | `on("operation:…")`     | React to queue and sync status in your UI                               |
-
 
 ### Behavior guarantees
 
@@ -332,7 +333,6 @@ sync.on(SyncEventTypes.Failed, ({ operation }) => {
 
 ## Why use SyncForge?
 
-
 | You get                     | Why it matters                                                   |
 | --------------------------- | ---------------------------------------------------------------- |
 | **Offline-first by design** | User actions are captured even when the network is not available |
@@ -341,7 +341,6 @@ sync.on(SyncEventTypes.Failed, ({ operation }) => {
 | **Persistent queue**        | Operations survive reloads (with a storage adapter)              |
 | **Observable lifecycle**    | Hook into events for UI, logging, or devtools later              |
 | **Small surface area**      | Not a database, not a state manager, not a networking framework  |
-
 
 **Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it.
 
@@ -371,13 +370,13 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 
 - [x] Mutation queue
 - [x] Memory storage adapter
+- [x] IndexedDB storage adapter
 - [x] Transport adapter
 - [x] Lifecycle events
 - [x] Retry strategy interface
 - [ ] Automatic sync when back online
 - [ ] Exponential and linear retry strategies
 - [ ] Optimistic updates
-- [ ] IndexedDB storage
 - [ ] React integration
 
 ## License
