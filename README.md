@@ -13,6 +13,7 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 - [Project status](./README.md#project-status)
 - [Installation](./README.md#installation)
 - [Quick start](./README.md#quick-start)
+- [API reference](./README.md#api-reference)
 - [The problem](./README.md#the-problem)
 - [What SyncForge does](./README.md#what-syncforge-does)
 - [Architecture](./README.md#architecture)
@@ -28,11 +29,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-| Status              | Details                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, retries, lifecycle events |
-| Tested              | Core engine behavior, flush integration, and IndexedDB persistence flows                 |
-| Planned before v1.0 | Automatic reconnect sync, framework integrations                                         |
+| Status              | Details                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events |
+| Tested              | Core engine behavior, flush integration, IndexedDB persistence, and auto sync flows                              |
+| Planned before v1.0 | Framework integrations                                                                                           |
 
 ## Installation
 
@@ -51,6 +52,55 @@ yarn add syncforge
 ## Quick start
 
 The first argument to `mutate()` is an **operation label** your app defines (e.g. `"createOrder"`). SyncForge stores it and passes the full operation to your transport on `flush()`. **Your transport** decides which API to call and how to map `operation.type` and `operation.payload`.
+
+### API reference
+
+#### `createSyncEngine(options?)`
+
+| Option       | Type               | Default                  | Description                                                                                        |
+| ------------ | ------------------ | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `transport`  | `TransportAdapter` | —                        | Sends each operation to your API. Required for `flush()` to work.                                  |
+| `storage`    | `StorageAdapter`   | `createMemoryStorage()`  | Persists the queue across reloads. Use `createIndexedDbStorage()` in browsers.                     |
+| `retry`      | `RetryStrategy`    | `immediateRetryStrategy` | Delay between retry attempts after a failed `send()`.                                              |
+| `maxRetries` | `number`           | `3`                      | Max transport attempts per operation before status becomes `failed`.                               |
+| `autoSync`   | `boolean`          | `true`                   | Browser-only. Calls `flush()` on `window` `"online"`. Ignored in Node/SSR. Set `false` to disable. |
+
+**`TransportAdapter`** — object with `send(operation: SyncOperation): Promise<void>`. Throw on failure to trigger a retry; resolve on success.
+
+#### `SyncEngine` methods
+
+| Method                  | Arguments                                         | Returns                           | Description                                                         |
+| ----------------------- | ------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------- |
+| `mutate(type, payload)` | `type`: `string` (your label), `payload`: any     | `Promise<SyncOperation>`          | Enqueues a mutation. Emits `operation:queued`.                      |
+| `flush()`               | —                                                 | `Promise<{ successful, failed }>` | Sends all pending operations via `transport`. Requires `transport`. |
+| `getPending()`          | —                                                 | `Promise<SyncOperation[]>`        | Operations with status `pending`.                                   |
+| `remove(id)`            | `id`: `string`                                    | `Promise<boolean>`                | Removes one operation by id. `true` if found.                       |
+| `clear()`               | —                                                 | `Promise<void>`                   | Removes all operations from the queue.                              |
+| `destroy()`             | —                                                 | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.      |
+| `on(type, listener)`    | `type`: event name, `listener`: `(event) => void` | `void`                            | Subscribe to lifecycle events (see below).                          |
+| `off(type, listener)`   | Same as `on`                                      | `void`                            | Unsubscribe a listener.                                             |
+
+**`SyncOperation`** fields: `id`, `type`, `payload`, `status` (`pending` \| `syncing` \| `completed` \| `failed`), `retries`, `createdAt`.
+
+#### Storage adapters
+
+| Factory                            | Options                                                                  | Environment                                       |
+| ---------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
+| `createMemoryStorage()`            | —                                                                        | Node, tests, anywhere (in-memory; lost on reload) |
+| `createIndexedDbStorage(options?)` | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`) | Browser only (IndexedDB)                          |
+
+#### Lifecycle events (`SyncEventTypes`)
+
+| Event                 | When                                       |
+| --------------------- | ------------------------------------------ |
+| `operation:queued`    | After `mutate()` persists the operation    |
+| `operation:syncing`   | Before `transport.send()` during `flush()` |
+| `operation:succeeded` | Transport resolved successfully            |
+| `operation:failed`    | Max retries exceeded                       |
+
+Event payload: `{ type, operation, timestamp }`.
+
+### Browser example
 
 ```typescript
 import { createIndexedDbStorage, createSyncEngine } from "syncforge"
@@ -78,11 +128,14 @@ const sync = createSyncEngine({
 
 await sync.mutate("createOrder", { customerId: "123", total: 100 })
 
+// Optional: flush immediately when you want sync now (auto sync also runs on reconnect)
 const result = await sync.flush()
 console.log(result) // { successful: 1, failed: 0 }
 ```
 
 `createIndexedDbStorage()` is **browser-only** — it requires IndexedDB (not available in Node.js or SSR). Use `createMemoryStorage()` for tests, scripts, and server environments. Set a unique `dbName` per app on the same origin to avoid queue collisions.
+
+**Auto sync on reconnect** is **enabled by default** in browsers (`autoSync` defaults to `true`). When the network comes back, SyncForge calls `flush()` for you — no `window.addEventListener("online", ...)` boilerplate. Set `autoSync: false` for full manual control. Node.js and SSR ignore this option.
 
 ### Node.js and tests
 
@@ -92,6 +145,7 @@ import { createMemoryStorage, createSyncEngine } from "syncforge"
 const sync = createSyncEngine({
   transport: myTransport,
   storage: createMemoryStorage(),
+  autoSync: false, // Node has no window — auto sync is a no-op here anyway
 })
 ```
 
@@ -294,6 +348,8 @@ stateDiagram-v2
 
 ### API
 
+See [API reference](./README.md#api-reference) in Quick start for full method and option details.
+
 | Method                  | Description                                                             |
 | ----------------------- | ----------------------------------------------------------------------- |
 | `mutate(type, payload)` | Enqueue a change (always safe to call)                                  |
@@ -303,7 +359,7 @@ stateDiagram-v2
 
 ### Behavior guarantees
 
-- Concurrent `flush()` calls share one in-flight sync — operations are never sent twice.
+- Concurrent `flush()` calls share one in-flight sync — operations are never sent twice (including auto sync on reconnect).
 - Mutations made during `flush()` are queued for the **next** flush, not the current one.
 - After reload, operation `status`, `retries`, and `createdAt` are restored correctly.
 
@@ -344,7 +400,7 @@ sync.on(SyncEventTypes.Failed, ({ operation }) => {
 
 **Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it.
 
-**Not a fit (yet):** full local-first databases, automatic background sync, or conflict resolution.
+**Not a fit (yet):** full local-first databases, conflict resolution, or optimistic UI updates.
 
 ## Why not X?
 
@@ -374,7 +430,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Transport adapter
 - [x] Lifecycle events
 - [x] Retry strategy interface
-- [ ] Automatic sync when back online
+- [x] Automatic sync when back online
 - [ ] Exponential and linear retry strategies
 - [ ] Optimistic updates
 - [ ] React integration
