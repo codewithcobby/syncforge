@@ -6,12 +6,15 @@ SyncForge aims to be the simplest way to guarantee mutation delivery in offline-
 
 SyncForge is a small TypeScript library that saves changes locally when your app is offline or on a bad connection, then sends them to your server when you're back online. It works with any frontend framework and any backend — you bring your own API.
 
+Using **React**? See [`@syncforge/react`](./packages/react/README.md) — official provider and hooks (`useSyncEngine`, `useSyncFlush`, `useSyncStatus`) on top of the same engine.
+
 Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobby))
 
 ## Table of contents
 
 - [Project status](./README.md#project-status)
 - [Installation](./README.md#installation)
+- [React integration](./README.md#react-integration)
 - [Quick start](./README.md#quick-start)
 - [API reference](./README.md#api-reference)
 - [The problem](./README.md#the-problem)
@@ -29,11 +32,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-| Status              | Details                                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events |
-| Tested              | Core engine behavior, flush integration, IndexedDB persistence, and auto sync flows                              |
-| Planned before v1.0 | Framework integrations                                                                                           |
+| Status              | Details                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, [`@syncforge/react`](./packages/react/README.md) |
+| Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, [`@syncforge/react` hooks](./packages/react/README.md#hooks)                                      |
+| Planned before v1.0 | Optimistic updates, example ecosystem expansion                                                                                                                    |
 
 ## Installation
 
@@ -48,6 +51,69 @@ npm install syncforge
 ```bash
 yarn add syncforge
 ```
+
+### React
+
+[`@syncforge/react`](./packages/react/README.md) is a separate package — core `syncforge` has zero React dependencies.
+
+```bash
+pnpm add @syncforge/react syncforge
+```
+
+```bash
+npm install @syncforge/react syncforge
+```
+
+Peer dependencies: `react`, `react-dom`, `syncforge`. Full setup, transport patterns, and hook reference: [**`@syncforge/react` README**](./packages/react/README.md).
+
+## React integration
+
+Official React bindings live in [`@syncforge/react`](./packages/react/README.md). Pass a pre-created engine to the provider; hooks subscribe to lifecycle events so you do not wire `useEffect` + `engine.on()` yourself.
+
+```tsx
+import { useMemo } from "react"
+import { createIndexedDbStorage, createSyncEngine } from "syncforge"
+import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncStatus } from "@syncforge/react"
+
+const engine = createSyncEngine({
+  storage: createIndexedDbStorage(),
+  transport: myTransport,
+  autoSync: true,
+})
+
+function App() {
+  return (
+    <SyncForgeProvider engine={engine}>
+      <OrderForm />
+      <SyncIndicator />
+    </SyncForgeProvider>
+  )
+}
+
+function SyncIndicator() {
+  const status = useSyncStatus()
+  return (
+    <span>
+      {status.pendingCount} pending{status.isSyncing ? " (syncing…)" : ""}
+    </span>
+  )
+}
+
+function OrderForm() {
+  const engine = useSyncEngine()
+  const flush = useSyncFlush()
+  // engine.mutate(...) · flush() for manual sync
+}
+```
+
+| Export                                                              | Description                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [`SyncForgeProvider`](./packages/react/README.md#syncforgeprovider) | Share one `SyncEngine` via context (does not mutate the engine)   |
+| [`useSyncEngine()`](./packages/react/README.md#usesyncengine)       | Raw `SyncEngine` reference — `mutate()`, `on()`, `engine.flush()` |
+| [`useSyncFlush()`](./packages/react/README.md#usesyncflush)         | Optional tracked `flush()` for “Sync now” UI                      |
+| [`useSyncStatus()`](./packages/react/README.md#usesyncstatus)       | `{ pendingCount, isSyncing, lastError }`                          |
+
+**Docs:** [`packages/react/README.md`](./packages/react/README.md) · **Example:** [`examples/react-offline-orders`](./examples/react-offline-orders/) · **Try online:** [StackBlitz demo](https://stackblitz.com/github/codewithcobby/syncforge/tree/main/examples/react-offline-orders)
 
 ## Quick start
 
@@ -144,6 +210,10 @@ const syncLinear = createSyncEngine({
 ```
 
 When `jitter: true` on exponential backoff, the actual delay is randomized between **50% and 100%** of the calculated exponential delay — so repeated failures will not wait for an exact millisecond value. The exact jitter algorithm is not part of the public API and may evolve.
+
+#### `@syncforge/react`
+
+See [React integration](#react-integration) and the [`@syncforge/react` README](./packages/react/README.md).
 
 ### Browser example
 
@@ -327,14 +397,14 @@ flowchart LR
   Transport -->|REST · GraphQL · tRPC · custom| Backend
 ```
 
-| Layer                 | Responsibility                                                        |
-| --------------------- | --------------------------------------------------------------------- |
-| **Application**       | Calls `mutate()`, `flush()`, and subscribes to events                 |
-| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events |
-| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend           |
-| **Storage Adapter**   | Persists the operation queue across reloads                           |
-| **Backend**           | Your existing API — SyncForge does not replace it                     |
-| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow       |
+| Layer                 | Responsibility                                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **Application**       | Calls `mutate()`, `flush()`, and subscribes to events — or use [`@syncforge/react`](./packages/react/README.md) hooks in React apps |
+| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                               |
+| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                         |
+| **Storage Adapter**   | Persists the operation queue across reloads                                                                                         |
+| **Backend**           | Your existing API — SyncForge does not replace it                                                                                   |
+| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow                                                                     |
 
 ## How it works
 
@@ -395,12 +465,12 @@ stateDiagram-v2
 
 See [API reference](./README.md#api-reference) in Quick start for full method and option details.
 
-| Method                  | Description                                                             |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `mutate(type, payload)` | Enqueue a change (always safe to call)                                  |
-| `flush()`               | Send pending operations via transport; returns `{ successful, failed }` |
-| `getPending()`          | List operations still waiting to sync                                   |
-| `on("operation:…")`     | React to queue and sync status in your UI                               |
+| Method                  | Description                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `mutate(type, payload)` | Enqueue a change (always safe to call)                                                                                    |
+| `flush()`               | Send pending operations via transport; returns `{ successful, failed }`                                                   |
+| `getPending()`          | List operations still waiting to sync                                                                                     |
+| `on("operation:…")`     | React to queue and sync status in your UI — or use [`useSyncStatus()`](./packages/react/README.md#usesyncstatus) in React |
 
 ### Behavior guarantees
 
@@ -434,14 +504,14 @@ sync.on(SyncEventTypes.Failed, ({ operation }) => {
 
 ## Why use SyncForge?
 
-| You get                     | Why it matters                                                   |
-| --------------------------- | ---------------------------------------------------------------- |
-| **Offline-first by design** | User actions are captured even when the network is not available |
-| **Framework-agnostic**      | Use with React, Vue, Svelte, or plain JavaScript                 |
-| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care       |
-| **Persistent queue**        | Operations survive reloads (with a storage adapter)              |
-| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later              |
-| **Small surface area**      | Not a database, not a state manager, not a networking framework  |
+| You get                     | Why it matters                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Offline-first by design** | User actions are captured even when the network is not available                                    |
+| **Framework-agnostic**      | Use with React ([`@syncforge/react`](./packages/react/README.md)), Vue, Svelte, or plain JavaScript |
+| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                          |
+| **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                 |
+| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                 |
+| **Small surface area**      | Not a database, not a state manager, not a networking framework                                     |
 
 **Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it.
 
@@ -462,7 +532,7 @@ PouchDB is a local database with replication features. SyncForge is a focused mu
 SyncForge core stays intentionally small:
 
 - **Not** a database — it queues mutations, it does not replace your data layer
-- **Not** a React library — no hooks or components in core (integrations may come later)
+- **Not** a React library in core — use [`@syncforge/react`](./packages/react/README.md) for hooks and provider
 - **Not** a networking stack — you implement `TransportAdapter` for your API
 
 That keeps the library easy to reason about and easy to adopt one piece at a time.
@@ -478,7 +548,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Automatic sync when back online
 - [x] Exponential and linear retry strategies
 - [ ] Optimistic updates
-- [ ] React integration
+- [x] React integration — [`@syncforge/react`](./packages/react/README.md)
 
 ## License
 
