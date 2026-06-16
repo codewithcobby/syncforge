@@ -1,0 +1,45 @@
+{
+  "name": "syncforge",
+  "version": "0.1.0",
+  "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
+  "license": "MIT",
+  "author": "Frank K. Abrokwa (codewithcobby)",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "watch": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "offline",
+    "offline-first",
+    "sync",
+    "queue",
+    "synchronization",
+    "typescript",
+    "indexeddb"
+  ],
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "nanoid": "^5.1.11"
+  }
+}
