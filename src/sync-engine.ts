@@ -91,6 +91,7 @@ export function createSyncEngine(options: SyncEngineOptions = {}): SyncEngine {
         } else {
           operation.status = SyncOperationStatuses.Pending;
           await persist();
+          emitLifecycle(SyncEventTypes.Queued, operation);
           await delay(retry.getDelay(operation.retries));
         }
       }

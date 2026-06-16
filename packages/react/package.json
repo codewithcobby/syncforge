@@ -1,7 +1,7 @@
 {
-  "name": "syncforge",
+  "name": "@syncforge/react",
   "version": "0.4.0",
-  "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
+  "description": "React bindings for SyncForge — provider and hooks for offline-first mutation sync.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
   "type": "module",
@@ -22,27 +22,36 @@
   },
   "scripts": {
     "build": "tsup",
-    "watch": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "keywords": [
+    "react",
     "offline",
     "offline-first",
     "sync",
-    "queue",
-    "synchronization",
-    "typescript",
-    "indexeddb"
+    "syncforge"
   ],
+  "peerDependencies": {
+    "react": "^18 || ^19",
+    "react-dom": "^18 || ^19",
+    "syncforge": "^0.4.0"
+  },
   "devDependencies": {
-    "fake-indexeddb": "^6.2.5",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "happy-dom": "^18.0.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "syncforge": "workspace:*",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
-  "dependencies": {
-    "nanoid": "^5.1.11"
-  }
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false
 }
