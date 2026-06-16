@@ -27,9 +27,6 @@ importers:
 
   examples/react-offline-orders:
     dependencies:
-      '@syncforge/react':
-        specifier: workspace:*
-        version: link:../../packages/react
       react:
         specifier: ^19.1.0
         version: 19.2.7
@@ -39,6 +36,9 @@ importers:
       syncforge:
         specifier: workspace:*
         version: link:../..
+      syncforge-react:
+        specifier: workspace:*
+        version: link:../../packages/react
     devDependencies:
       '@types/react':
         specifier: ^19.1.8

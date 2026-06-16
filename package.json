@@ -1,6 +1,6 @@
 {
   "name": "syncforge",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
@@ -22,13 +22,13 @@
   },
   "scripts": {
     "build": "tsup",
-    "build:all": "pnpm --filter syncforge --filter @syncforge/react run build",
+    "build:all": "pnpm --filter syncforge --filter syncforge-react run build",
     "watch": "tsup --watch",
     "test": "vitest run",
-    "test:all": "pnpm --filter syncforge --filter @syncforge/react run test",
+    "test:all": "pnpm --filter syncforge --filter syncforge-react run test",
     "test:watch": "vitest",
     "clean": "rm -rf dist",
-    "clean:all": "pnpm run clean && pnpm --filter @syncforge/react run clean",
+    "clean:all": "pnpm run clean && pnpm --filter syncforge-react run clean",
     "ci": "pnpm run build:all && pnpm run test:all"
   },
   "keywords": [
