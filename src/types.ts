@@ -11,13 +11,37 @@ export const SyncOperationStatuses = {
 
 export type SyncOperationStatus = (typeof SyncOperationStatuses)[keyof typeof SyncOperationStatuses]
 
-export interface SyncOperation<T = unknown> {
+export interface SyncOperation<TPayload = unknown, TOptimisticData = unknown> {
   id: string
   type: string
-  payload: T
+  payload: TPayload
   status: SyncOperationStatus
   retries: number
   createdAt: Date
+  optimisticData?: TOptimisticData
+  lastError?: unknown
+}
+
+export type OptimisticApplyFn<TContext = unknown> = (
+  operation: SyncOperation,
+  context: TContext,
+) => void | Promise<void>
+
+export type OptimisticRollbackFn<TContext = unknown> = (
+  operation: SyncOperation,
+  error: unknown,
+  context: TContext,
+) => void | Promise<void>
+
+export interface OptimisticHandler<TContext = unknown> {
+  apply: OptimisticApplyFn<TContext>
+  rollback: OptimisticRollbackFn<TContext>
+}
+
+export interface MutateOptions<TContext = unknown, TOptimisticData = unknown> {
+  optimisticData?: TOptimisticData
+  optimisticUpdate?: OptimisticApplyFn<TContext>
+  rollback?: OptimisticRollbackFn<TContext>
 }
 
 export interface StorageAdapter {
@@ -25,12 +49,14 @@ export interface StorageAdapter {
   saveOperations(operations: SyncOperation[]): Promise<void>
 }
 
-export interface SyncEngineOptions {
+export interface SyncEngineOptions<TContext = unknown> {
   transport?: TransportAdapter
   storage?: StorageAdapter
   retry?: RetryStrategy
   maxRetries?: number
   autoSync?: boolean
+  context?: TContext
+  optimisticHandlers?: Record<string, OptimisticHandler<TContext>>
 }
 
 export interface FlushResult {
@@ -39,8 +65,14 @@ export interface FlushResult {
 }
 
 export interface SyncEngine {
-  mutate<T>(type: string, payload: T): Promise<SyncOperation<T>>
+  mutate<TPayload = unknown, TOptimisticData = unknown>(
+    type: string,
+    payload: TPayload,
+    options?: MutateOptions<unknown, TOptimisticData>,
+  ): Promise<SyncOperation<TPayload, TOptimisticData>>
   getPending<T = unknown>(): Promise<SyncOperation<T>[]>
+  getFailed<T = unknown>(): Promise<SyncOperation<T>[]>
+  retry(id: string): Promise<boolean>
   remove(id: string): Promise<boolean>
   clear(): Promise<void>
   flush(): Promise<FlushResult>

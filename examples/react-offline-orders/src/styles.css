@@ -31,6 +31,27 @@ button {
   cursor: pointer;
 }
 
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.actions button {
+  margin-top: 0;
+}
+
+.orders {
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.orders .muted {
+  list-style: none;
+  margin-left: -1.25rem;
+  color: #6b7280;
+}
+
 .hint {
   margin-top: 1.5rem;
   color: #4b5563;

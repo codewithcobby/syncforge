@@ -1,8 +1,11 @@
 import { render, waitFor, act } from "@testing-library/react"
+import { useEffect } from "react"
 import { describe, expect, it, vi } from "vitest"
 import {
   createMemoryStorage,
   createSyncEngine,
+  SyncEventTypes,
+  type SyncEvent,
   type SyncOperation,
   type TransportAdapter,
 } from "syncforge"
@@ -261,5 +264,118 @@ describe("useSyncStatus", () => {
     unmount()
     expect(offSpy).toHaveBeenCalled()
     expect(engine.flush).toBe(originalFlush)
+  })
+})
+
+describe("optimistic events", () => {
+  function OptimisticListenerProbe({
+    onOptimistic,
+  }: {
+    onOptimistic: (event: SyncEvent) => void
+  }) {
+    const engine = useSyncEngine()
+
+    useEffect(() => {
+      const listener = (event: SyncEvent) => onOptimistic(event)
+      engine.on(SyncEventTypes.Optimistic, listener)
+      return () => {
+        engine.off(SyncEventTypes.Optimistic, listener)
+      }
+    }, [engine, onOptimistic])
+
+    return null
+  }
+
+  it("fires optimistic listeners from useSyncEngine", async () => {
+    const engine = createSyncEngine({
+      storage: createMemoryStorage(),
+      context: { orders: [] as Array<{ id: string }> },
+      optimisticHandlers: {
+        createOrder: {
+          apply(operation, ctx) {
+            const payload = operation.payload as { id: string }
+            ctx.orders.push(payload)
+          },
+          rollback() {},
+        },
+      },
+    })
+
+    const optimisticEvents: SyncEvent[] = []
+    const onOptimistic = vi.fn((event: SyncEvent) => {
+      optimisticEvents.push(event)
+    })
+
+    render(
+      <SyncForgeProvider engine={engine}>
+        <OptimisticListenerProbe onOptimistic={onOptimistic} />
+      </SyncForgeProvider>,
+    )
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: "1" })
+    })
+
+    await waitFor(() => {
+      expect(onOptimistic).toHaveBeenCalledTimes(1)
+      expect(optimisticEvents[0]?.type).toBe(SyncEventTypes.Optimistic)
+    })
+  })
+
+  it("does not add revision to useSyncStatus", async () => {
+    const engine = createSyncEngine({
+      storage: createMemoryStorage(),
+      context: {},
+      optimisticHandlers: {
+        createOrder: {
+          apply() {},
+          rollback() {},
+        },
+      },
+    })
+
+    let statusSnapshot: ReturnType<typeof useSyncStatus> | null = null
+
+    function StatusShapeProbe() {
+      statusSnapshot = useSyncStatus()
+      return null
+    }
+
+    render(
+      <SyncForgeProvider engine={engine}>
+        <StatusShapeProbe />
+      </SyncForgeProvider>,
+    )
+
+    expect(statusSnapshot).not.toBeNull()
+    expect("revision" in statusSnapshot!).toBe(false)
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: "1" })
+    })
+
+    await waitFor(() => {
+      expect(statusSnapshot?.pendingCount).toBe(1)
+      expect("revision" in statusSnapshot!).toBe(false)
+    })
+  })
+
+  it("removes optimistic listeners on unmount", () => {
+    const engine = createSyncEngine({ storage: createMemoryStorage() })
+    const onSpy = vi.spyOn(engine, "on")
+    const offSpy = vi.spyOn(engine, "off")
+    const onOptimistic = vi.fn()
+
+    const { unmount } = render(
+      <SyncForgeProvider engine={engine}>
+        <OptimisticListenerProbe onOptimistic={onOptimistic} />
+      </SyncForgeProvider>,
+    )
+
+    expect(onSpy).toHaveBeenCalledWith(SyncEventTypes.Optimistic, expect.any(Function))
+
+    unmount()
+
+    expect(offSpy).toHaveBeenCalledWith(SyncEventTypes.Optimistic, expect.any(Function))
   })
 })

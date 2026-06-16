@@ -32,11 +32,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-| Status              | Details                                                                                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, [`@syncforge/react`](./packages/react/README.md) |
-| Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, [`@syncforge/react` hooks](./packages/react/README.md#hooks)                                      |
-| Planned before v1.0 | Optimistic updates, example ecosystem expansion                                                                                                                    |
+| Status              | Details                                                                                                                                                                                |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, optimistic updates, [`@syncforge/react`](./packages/react/README.md) |
+| Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, optimistic handlers, [`@syncforge/react` hooks](./packages/react/README.md#hooks)                                     |
+| Planned before v1.0 | Example ecosystem expansion                                                                                                                                                            |
 
 ## Installation
 
@@ -111,6 +111,7 @@ function OrderForm() {
 | [`SyncForgeProvider`](./packages/react/README.md#syncforgeprovider) | Share one `SyncEngine` via context (does not mutate the engine)   |
 | [`useSyncEngine()`](./packages/react/README.md#usesyncengine)       | Raw `SyncEngine` reference — `mutate()`, `on()`, `engine.flush()` |
 | [`useSyncFlush()`](./packages/react/README.md#usesyncflush)         | Optional tracked `flush()` for “Sync now” UI                      |
+| [`useSyncMutate()`](./packages/react/README.md#usesyncmutate)       | Ergonomic `mutate()` with `optimisticData` and inline overrides   |
 | [`useSyncStatus()`](./packages/react/README.md#usesyncstatus)       | `{ pendingCount, isSyncing, lastError }`                          |
 
 **Docs:** [`packages/react/README.md`](./packages/react/README.md) · **Example:** [`examples/react-offline-orders`](./examples/react-offline-orders/) · **Try online:** [StackBlitz demo](https://stackblitz.com/github/codewithcobby/syncforge/tree/main/examples/react-offline-orders)
@@ -123,30 +124,36 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 #### `createSyncEngine(options?)`
 
-| Option       | Type               | Default                  | Description                                                                                        |
-| ------------ | ------------------ | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| `transport`  | `TransportAdapter` | —                        | Sends each operation to your API. Required for `flush()` to work.                                  |
-| `storage`    | `StorageAdapter`   | `createMemoryStorage()`  | Persists the queue across reloads. Use `createIndexedDbStorage()` in browsers.                     |
-| `retry`      | `RetryStrategy`    | `immediateRetryStrategy` | Delay between retry attempts after a failed `send()`.                                              |
-| `maxRetries` | `number`           | `3`                      | Max transport attempts per operation before status becomes `failed`.                               |
-| `autoSync`   | `boolean`          | `true`                   | Browser-only. Calls `flush()` on `window` `"online"`. Ignored in Node/SSR. Set `false` to disable. |
+| Option               | Type                                | Default                  | Description                                                                                        |
+| -------------------- | ----------------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `transport`          | `TransportAdapter`                  | —                        | Sends each operation to your API. Required for `flush()` to work.                                  |
+| `storage`            | `StorageAdapter`                    | `createMemoryStorage()`  | Persists the queue across reloads. Use `createIndexedDbStorage()` in browsers.                     |
+| `retry`              | `RetryStrategy`                     | `immediateRetryStrategy` | Delay between retry attempts after a failed `send()`.                                              |
+| `maxRetries`         | `number`                            | `3`                      | Max transport attempts per operation before status becomes `failed`.                               |
+| `autoSync`           | `boolean`                           | `true`                   | Browser-only. Calls `flush()` on `window` `"online"`. Ignored in Node/SSR. Set `false` to disable. |
+| `context`            | `TContext`                          | —                        | User-owned state (store, query client, etc.) passed to optimistic handlers.                        |
+| `optimisticHandlers` | `Record<string, OptimisticHandler>` | —                        | Registry of `apply` / `rollback` handlers keyed by `operation.type`. Survives reload.              |
 
 **`TransportAdapter`** — object with `send(operation: SyncOperation): Promise<void>`. Throw on failure to trigger a retry; resolve on success.
 
 #### `SyncEngine` methods
 
-| Method                  | Arguments                                         | Returns                           | Description                                                         |
-| ----------------------- | ------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------- |
-| `mutate(type, payload)` | `type`: `string` (your label), `payload`: any     | `Promise<SyncOperation>`          | Enqueues a mutation. Emits `operation:queued`.                      |
-| `flush()`               | —                                                 | `Promise<{ successful, failed }>` | Sends all pending operations via `transport`. Requires `transport`. |
-| `getPending()`          | —                                                 | `Promise<SyncOperation[]>`        | Operations with status `pending`.                                   |
-| `remove(id)`            | `id`: `string`                                    | `Promise<boolean>`                | Removes one operation by id. `true` if found.                       |
-| `clear()`               | —                                                 | `Promise<void>`                   | Removes all operations from the queue.                              |
-| `destroy()`             | —                                                 | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.      |
-| `on(type, listener)`    | `type`: event name, `listener`: `(event) => void` | `void`                            | Subscribe to lifecycle events (see below).                          |
-| `off(type, listener)`   | Same as `on`                                      | `void`                            | Unsubscribe a listener.                                             |
+| Method                            | Arguments                                                                  | Returns                           | Description                                                                                                                           |
+| --------------------------------- | -------------------------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `mutate(type, payload, options?)` | `type`: `string` (your label), `payload`: any, `options?`: `MutateOptions` | `Promise<SyncOperation>`          | Enqueues a mutation. Runs optimistic `apply` after persist when handlers exist. Emits `operation:optimistic` then `operation:queued`. |
+| `flush()`                         | —                                                                          | `Promise<{ successful, failed }>` | Sends all pending operations via `transport`. Requires `transport`.                                                                   |
+| `getPending()`                    | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `pending`.                                                                                                     |
+| `getFailed()`                     | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `failed` (terminal transport failure).                                                                         |
+| `retry(id)`                       | `id`: `string`                                                             | `Promise<boolean>`                | Re-queue a failed operation (`pending`, `retries = 0`, clears `lastError`). Does not re-run `apply`.                                  |
+| `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
+| `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
+| `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
+| `on(type, listener)`              | `type`: event name, `listener`: `(event) => void`                          | `void`                            | Subscribe to lifecycle events (see below).                                                                                            |
+| `off(type, listener)`             | Same as `on`                                                               | `void`                            | Unsubscribe a listener.                                                                                                               |
 
-**`SyncOperation`** fields: `id`, `type`, `payload`, `status` (`pending` \| `syncing` \| `completed` \| `failed`), `retries`, `createdAt`.
+**`SyncOperation`** fields: `id`, `type`, `payload`, `status` (`pending` \| `syncing` \| `completed` \| `failed`), `retries`, `createdAt`, `optimisticData?` (persisted metadata for rollback), `lastError?` (set on terminal failure; cleared by `retry(id)`).
+
+**`MutateOptions`:** `optimisticData?` (persisted on the operation), `optimisticUpdate?` and `rollback?` (session-scoped inline overrides that merge with registry handlers — see [Optimistic updates](#optimistic-updates)).
 
 #### Storage adapters
 
@@ -157,14 +164,30 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 #### Lifecycle events (`SyncEventTypes`)
 
-| Event                 | When                                       |
-| --------------------- | ------------------------------------------ |
-| `operation:queued`    | After `mutate()` persists the operation    |
-| `operation:syncing`   | Before `transport.send()` during `flush()` |
-| `operation:succeeded` | Transport resolved successfully            |
-| `operation:failed`    | Max retries exceeded                       |
+| Event                  | When                                                      |
+| ---------------------- | --------------------------------------------------------- |
+| `operation:optimistic` | After optimistic `apply` runs (handlers only)             |
+| `operation:queued`     | After `mutate()` persists the operation                   |
+| `operation:syncing`    | Before `transport.send()` during `flush()`                |
+| `operation:succeeded`  | Transport resolved successfully                           |
+| `operation:rollback`   | After rollback handler on terminal failure                |
+| `operation:failed`     | Max retries exceeded (after rollback when handlers exist) |
 
-Event payload: `{ type, operation, timestamp }`.
+Event payload: `{ type, operation, timestamp, error? }`. Rollback and failed events include `error`.
+
+#### Event ordering (public contract)
+
+**`mutate()` with handlers:** `persist` → `operation:optimistic` → `operation:queued`
+
+**`mutate()` without handlers:** `persist` → `operation:queued`
+
+**Successful flush (per operation):** `operation:syncing` → `operation:succeeded`
+
+**Retryable transport failure:** `operation:syncing` → `operation:queued`
+
+**Terminal transport failure:** `operation:syncing` → `operation:rollback` → `operation:failed`
+
+**`retry(id)` on failed operation:** status reset → persist → `operation:queued` (no re-apply)
 
 #### Retry strategies
 
@@ -500,7 +523,60 @@ sync.on(SyncEventTypes.Succeeded, ({ operation }) => {
 sync.on(SyncEventTypes.Failed, ({ operation }) => {
   console.log("failed", operation.id)
 })
+
+sync.on(SyncEventTypes.Optimistic, ({ operation }) => {
+  console.log("optimistic", operation.id)
+})
+
+sync.on(SyncEventTypes.Rollback, ({ operation, error }) => {
+  console.log("rollback", operation.id, error)
+})
 ```
+
+## Optimistic updates
+
+SyncForge does **not** own your application state. You pass optional `context` at engine creation (Zustand, Redux, React state, etc.) and register **`optimisticHandlers`** keyed by `operation.type`. Handlers run `apply` after the operation is persisted and `rollback` only on **terminal** transport failure (when `maxRetries` is exhausted).
+
+> **Registry = reload-safe recovery.** Inline `optimisticUpdate` / `rollback` on `mutate()` are **session-scoped only** — they merge with registry handlers but are **not** persisted. After a page reload, only `optimisticHandlers[type]` can run rollback.
+
+**Handler merge:** `apply = inline.optimisticUpdate ?? registry.apply` · `rollback = inline.rollback ?? registry.rollback`. Inline overrides one side at a time; the other side falls back to the registry.
+
+**`optimisticData`** on `mutate()` is persisted on the operation (JSON-serializable metadata for rollback, e.g. a temp id). Callbacks are never persisted.
+
+**On reload:** pending operations are hydrated from storage but **`apply` is not re-run**. Reconcile UI from your own state + `getPending()`. If a hydrated op later fails, registry rollback uses `optimisticData`.
+
+**Failed operations:** use `getFailed()` and `retry(id)` — resets to `pending`, clears `lastError`, does **not** re-run `apply`.
+
+```typescript
+const sync = createSyncEngine({
+  transport,
+  storage: createIndexedDbStorage(),
+  context: { orderStore },
+  optimisticHandlers: {
+    createOrder: {
+      apply(operation, { orderStore }) {
+        orderStore.add(operation.payload)
+      },
+      rollback(operation, _error, { orderStore }) {
+        orderStore.remove(operation.optimisticData?.tempId ?? operation.payload.id)
+      },
+    },
+  },
+})
+
+await sync.mutate("createOrder", order, {
+  optimisticData: { tempId: order.id },
+})
+
+// After terminal failure:
+const failed = await sync.getFailed()
+if (failed.length > 0) {
+  await sync.retry(failed[0].id)
+  await sync.flush()
+}
+```
+
+In React, subscribe to `operation:optimistic` and `operation:rollback` via `useSyncEngine().on()` — `useSyncStatus()` stays sync-queue focused (no forced re-renders for optimistic UI). See [`@syncforge/react` optimistic events](./packages/react/README.md#optimistic-events).
 
 ## Why use SyncForge?
 
@@ -513,9 +589,9 @@ sync.on(SyncEventTypes.Failed, ({ operation }) => {
 | **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                 |
 | **Small surface area**      | Not a database, not a state manager, not a networking framework                                     |
 
-**Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it.
+**Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it — including optimistic UI when you own the store.
 
-**Not a fit (yet):** full local-first databases, conflict resolution, or optimistic UI updates.
+**Not a fit (yet):** full local-first databases or conflict resolution / CRDTs.
 
 ## Why not X?
 
@@ -547,8 +623,9 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Retry strategy interface
 - [x] Automatic sync when back online
 - [x] Exponential and linear retry strategies
-- [ ] Optimistic updates
+- [x] Optimistic updates
 - [x] React integration — [`@syncforge/react`](./packages/react/README.md)
+- [ ] `retryAllFailed()` bulk helper (v0.6+)
 
 ## License
 
