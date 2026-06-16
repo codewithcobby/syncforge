@@ -7,8 +7,16 @@ export { SyncOperationStatuses } from "./types.js"
 export { reviveOperation, reviveOperations } from "./serialize.js"
 
 export type { TransportAdapter } from "./transport.js"
-export type { RetryStrategy } from "./retry.js"
-export { immediateRetryStrategy } from "./retry.js"
+export type {
+  RetryStrategy,
+  LinearBackoffRetryStrategyOptions,
+  ExponentialBackoffRetryStrategyOptions,
+} from "./retry.js"
+export {
+  immediateRetryStrategy,
+  exponentialBackoffRetryStrategy,
+  linearBackoffRetryStrategy,
+} from "./retry.js"
 
 export { SyncForgeError, StorageError, QueueError, TransportError } from "./errors.js"
 export { createQueue } from "./queue.js"
