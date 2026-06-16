@@ -6,7 +6,7 @@ SyncForge aims to be the simplest way to guarantee mutation delivery in offline-
 
 SyncForge is a small TypeScript library that saves changes locally when your app is offline or on a bad connection, then sends them to your server when you're back online. It works with any frontend framework and any backend — you bring your own API.
 
-Using **React**? See [`@syncforge/react`](./packages/react/README.md) — official provider and hooks (`useSyncEngine`, `useSyncFlush`, `useSyncStatus`) on top of the same engine.
+Using **React**? See [`syncforge-react`](./packages/react/README.md) — official provider and hooks (`useSyncEngine`, `useSyncFlush`, `useSyncStatus`) on top of the same engine.
 
 Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobby))
 
@@ -34,8 +34,8 @@ SyncForge is currently in **active development**.
 
 | Status              | Details                                                                                                                                                                                |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, optimistic updates, [`@syncforge/react`](./packages/react/README.md) |
-| Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, optimistic handlers, [`@syncforge/react` hooks](./packages/react/README.md#hooks)                                     |
+| Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, optimistic updates, [`syncforge-react`](./packages/react/README.md) |
+| Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, optimistic handlers, [`syncforge-react` hooks](./packages/react/README.md#hooks)                                     |
 | Planned before v1.0 | Example ecosystem expansion                                                                                                                                                            |
 
 ## Installation
@@ -54,26 +54,26 @@ yarn add syncforge
 
 ### React
 
-[`@syncforge/react`](./packages/react/README.md) is a separate package — core `syncforge` has zero React dependencies.
+[`syncforge-react`](./packages/react/README.md) is a separate package — core `syncforge` has zero React dependencies.
 
 ```bash
-pnpm add @syncforge/react syncforge
+pnpm add syncforge-react syncforge
 ```
 
 ```bash
-npm install @syncforge/react syncforge
+npm install syncforge-react syncforge
 ```
 
-Peer dependencies: `react`, `react-dom`, `syncforge`. Full setup, transport patterns, and hook reference: [**`@syncforge/react` README**](./packages/react/README.md).
+Peer dependencies: `react`, `react-dom`, `syncforge`. Full setup, transport patterns, and hook reference: [**`syncforge-react` README**](./packages/react/README.md).
 
 ## React integration
 
-Official React bindings live in [`@syncforge/react`](./packages/react/README.md). Pass a pre-created engine to the provider; hooks subscribe to lifecycle events so you do not wire `useEffect` + `engine.on()` yourself.
+Official React bindings live in [`syncforge-react`](./packages/react/README.md). Pass a pre-created engine to the provider; hooks subscribe to lifecycle events so you do not wire `useEffect` + `engine.on()` yourself.
 
 ```tsx
 import { useMemo } from "react"
 import { createIndexedDbStorage, createSyncEngine } from "syncforge"
-import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncStatus } from "@syncforge/react"
+import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncStatus } from "syncforge-react"
 
 const engine = createSyncEngine({
   storage: createIndexedDbStorage(),
@@ -234,9 +234,9 @@ const syncLinear = createSyncEngine({
 
 When `jitter: true` on exponential backoff, the actual delay is randomized between **50% and 100%** of the calculated exponential delay — so repeated failures will not wait for an exact millisecond value. The exact jitter algorithm is not part of the public API and may evolve.
 
-#### `@syncforge/react`
+#### `syncforge-react`
 
-See [React integration](#react-integration) and the [`@syncforge/react` README](./packages/react/README.md).
+See [React integration](#react-integration) and the [`syncforge-react` README](./packages/react/README.md).
 
 ### Browser example
 
@@ -422,7 +422,7 @@ flowchart LR
 
 | Layer                 | Responsibility                                                                                                                      |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Application**       | Calls `mutate()`, `flush()`, and subscribes to events — or use [`@syncforge/react`](./packages/react/README.md) hooks in React apps |
+| **Application**       | Calls `mutate()`, `flush()`, and subscribes to events — or use [`syncforge-react`](./packages/react/README.md) hooks in React apps |
 | **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                               |
 | **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                         |
 | **Storage Adapter**   | Persists the operation queue across reloads                                                                                         |
@@ -576,14 +576,14 @@ if (failed.length > 0) {
 }
 ```
 
-In React, subscribe to `operation:optimistic` and `operation:rollback` via `useSyncEngine().on()` — `useSyncStatus()` stays sync-queue focused (no forced re-renders for optimistic UI). See [`@syncforge/react` optimistic events](./packages/react/README.md#optimistic-events).
+In React, subscribe to `operation:optimistic` and `operation:rollback` via `useSyncEngine().on()` — `useSyncStatus()` stays sync-queue focused (no forced re-renders for optimistic UI). See [`syncforge-react` optimistic events](./packages/react/README.md#optimistic-events).
 
 ## Why use SyncForge?
 
 | You get                     | Why it matters                                                                                      |
 | --------------------------- | --------------------------------------------------------------------------------------------------- |
 | **Offline-first by design** | User actions are captured even when the network is not available                                    |
-| **Framework-agnostic**      | Use with React ([`@syncforge/react`](./packages/react/README.md)), Vue, Svelte, or plain JavaScript |
+| **Framework-agnostic**      | Use with React ([`syncforge-react`](./packages/react/README.md)), Vue, Svelte, or plain JavaScript |
 | **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                          |
 | **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                 |
 | **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                 |
@@ -608,7 +608,7 @@ PouchDB is a local database with replication features. SyncForge is a focused mu
 SyncForge core stays intentionally small:
 
 - **Not** a database — it queues mutations, it does not replace your data layer
-- **Not** a React library in core — use [`@syncforge/react`](./packages/react/README.md) for hooks and provider
+- **Not** a React library in core — use [`syncforge-react`](./packages/react/README.md) for hooks and provider
 - **Not** a networking stack — you implement `TransportAdapter` for your API
 
 That keeps the library easy to reason about and easy to adopt one piece at a time.
@@ -624,7 +624,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Automatic sync when back online
 - [x] Exponential and linear retry strategies
 - [x] Optimistic updates
-- [x] React integration — [`@syncforge/react`](./packages/react/README.md)
+- [x] React integration — [`syncforge-react`](./packages/react/README.md)
 - [ ] `retryAllFailed()` bulk helper (v0.6+)
 
 ## License

@@ -1,5 +1,5 @@
 {
-  "name": "@syncforge/react",
+  "name": "syncforge-react",
   "version": "0.5.0",
   "description": "React bindings for SyncForge — provider and hooks for offline-first mutation sync.",
   "license": "MIT",

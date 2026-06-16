@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { createIndexedDbStorage, createSyncEngine, SyncEventTypes, type SyncOperation, type TransportAdapter } from "syncforge"
-import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncMutate, useSyncStatus } from "@syncforge/react"
+import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncMutate, useSyncStatus } from "syncforge-react"
 
 type Order = { id: string; label: string }
 

@@ -1,6 +1,6 @@
 # React offline orders example
 
-Demo app for `syncforge` + `@syncforge/react`.
+Demo app for `syncforge` + `syncforge-react`.
 
 ## Run locally
 
@@ -23,7 +23,7 @@ This example uses workspace package names (not relative paths):
 
 ```typescript
 import { createSyncEngine, createIndexedDbStorage } from "syncforge"
-import { SyncForgeProvider, useSyncStatus } from "@syncforge/react"
+import { SyncForgeProvider, useSyncStatus } from "syncforge-react"
 ```
 
 ## Sandbox
