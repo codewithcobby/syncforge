@@ -1,4 +1,4 @@
-# @syncforge/react
+# syncforge-react
 
 Official React bindings for [SyncForge](https://github.com/codewithcobby/syncforge) — offline-first mutation sync for web apps.
 
@@ -15,19 +15,19 @@ Users on spotty Wi‑Fi, in a basement, or on a train tap **Save** and the reque
 
 You keep your existing API. You define operation labels (`"createOrder"`, `"updateProfile"`, …) and map them to REST, GraphQL, or anything else in your **transport**. SyncForge handles the **queue, persistence, retries, and event flow** — without replacing your backend or adopting a full local database.
 
-**`@syncforge/react`** is the React layer on that engine: one shared `SyncEngine` via context, `useSyncStatus()` for queue UI, and optional `useSyncFlush()` for “Sync now” — no manual `useEffect` subscriptions or prop drilling.
+**`syncforge-react`** is the React layer on that engine: one shared `SyncEngine` via context, `useSyncStatus()` for queue UI, and optional `useSyncFlush()` for “Sync now” — no manual `useEffect` subscriptions or prop drilling.
 
 | Package                                                | Role                                                                                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | [`syncforge`](https://www.npmjs.com/package/syncforge) | Core engine — `createSyncEngine`, storage, transport, retries ([docs](https://github.com/codewithcobby/syncforge#readme)) |
-| `@syncforge/react`                                     | Provider + hooks for React apps (this package)                                                                            |
+| `syncforge-react`                                     | Provider + hooks for React apps (this package)                                                                            |
 
 This README is self-contained for React. For architecture diagrams, Node/SSR notes, and framework-agnostic usage, see the [SyncForge repository](https://github.com/codewithcobby/syncforge).
 
 ## Install
 
 ```bash
-pnpm add @syncforge/react syncforge
+pnpm add syncforge-react syncforge
 ```
 
 Peer dependencies: `react`, `react-dom`, `syncforge`.
@@ -155,7 +155,7 @@ Default is `immediateRetryStrategy` (no delay between attempts within one `flush
 ```tsx
 import { useMemo } from "react"
 import { createIndexedDbStorage, createSyncEngine, type TransportAdapter } from "syncforge"
-import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncStatus } from "@syncforge/react"
+import { SyncForgeProvider, useSyncEngine, useSyncFlush, useSyncStatus } from "syncforge-react"
 
 const transport: TransportAdapter = {
   async send(operation) {
@@ -253,7 +253,7 @@ SyncForge does not force React re-renders for optimistic changes. Register handl
 ```tsx
 import { useEffect, useState } from "react"
 import { SyncEventTypes } from "syncforge"
-import { useSyncEngine, useSyncMutate } from "@syncforge/react"
+import { useSyncEngine, useSyncMutate } from "syncforge-react"
 
 function OrderList({ orderStore }: { orderStore: OrderStore }) {
   const engine = useSyncEngine()

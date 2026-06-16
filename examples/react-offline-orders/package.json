@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@syncforge/react": "workspace:*",
+    "syncforge-react": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "syncforge": "workspace:*"
