@@ -56,3 +56,6 @@ Desktop.ini
 .project
 .classpath
 .settings/
+
+# Local issue drafts (not for publication)
+docs/issues/

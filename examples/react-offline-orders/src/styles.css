@@ -1,0 +1,58 @@
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #111;
+  background: #f6f7f9;
+}
+
+body {
+  margin: 0;
+}
+
+.panel {
+  max-width: 40rem;
+  margin: 3rem auto;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+}
+
+.status {
+  padding: 0.75rem 1rem;
+  background: #f3f4f6;
+  border-radius: 0.5rem;
+}
+
+button {
+  margin-top: 1rem;
+  padding: 0.6rem 1rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.actions button {
+  margin-top: 0;
+}
+
+.orders {
+  margin: 1rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.orders .muted {
+  list-style: none;
+  margin-left: -1.25rem;
+  color: #6b7280;
+}
+
+.hint {
+  margin-top: 1.5rem;
+  color: #4b5563;
+}

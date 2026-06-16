@@ -131,6 +131,31 @@ describe("flush integration", () => {
     expect(pending[0]?.createdAt).toBeInstanceOf(Date);
   });
 
+  it("re-emits operation:queued when a failed send returns to pending", async () => {
+    const transport = new FailingTransport();
+    const sync = createSyncEngine({
+      transport,
+      maxRetries: 3,
+    });
+
+    const events: SyncEvent[] = [];
+    sync.on(SyncEventTypes.Queued, (event) => events.push(event));
+    sync.on(SyncEventTypes.Syncing, (event) => events.push(event));
+    sync.on(SyncEventTypes.Failed, (event) => events.push(event));
+
+    const operation = await sync.mutate("createOrder", { id: 1 });
+    await sync.flush();
+
+    expect(events.map((event) => event.type)).toEqual([
+      SyncEventTypes.Queued,
+      SyncEventTypes.Syncing,
+      SyncEventTypes.Queued,
+    ]);
+    expect(events[2]?.operation.id).toBe(operation.id);
+    expect(events[2]?.operation.status).toBe(SyncOperationStatuses.Pending);
+    expect(events[2]?.operation.retries).toBe(1);
+  });
+
   it("marks operations failed after max retries", async () => {
     const transport = new FailingTransport();
     const sync = createSyncEngine({
