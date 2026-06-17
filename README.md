@@ -32,11 +32,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-| Status              | Details                                                                                                                                                                                |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status              | Details                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, optimistic updates, [`syncforge-react`](./packages/react/README.md) |
 | Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, optimistic handlers, [`syncforge-react` hooks](./packages/react/README.md#hooks)                                     |
-| Planned before v1.0 | Example ecosystem expansion                                                                                                                                                            |
+| Planned before v1.0 | Example ecosystem expansion                                                                                                                                                           |
 
 ## Installation
 
@@ -145,6 +145,7 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `getPending()`                    | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `pending`.                                                                                                     |
 | `getFailed()`                     | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `failed` (terminal transport failure).                                                                         |
 | `retry(id)`                       | `id`: `string`                                                             | `Promise<boolean>`                | Re-queue a failed operation (`pending`, `retries = 0`, clears `lastError`). Does not re-run `apply`.                                  |
+| `retryAllFailed()`                | —                                                                          | `Promise<number>`                 | Re-queue all failed operations. Returns count of operations actually re-queued. Does not call `flush()`.                              |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -188,6 +189,8 @@ Event payload: `{ type, operation, timestamp, error? }`. Rollback and failed eve
 **Terminal transport failure:** `operation:syncing` → `operation:rollback` → `operation:failed`
 
 **`retry(id)` on failed operation:** status reset → persist → `operation:queued` (no re-apply)
+
+**`retryAllFailed()`:** per operation, same as `retry(id)`; sequential when multiple ops
 
 #### Retry strategies
 
@@ -420,14 +423,14 @@ flowchart LR
   Transport -->|REST · GraphQL · tRPC · custom| Backend
 ```
 
-| Layer                 | Responsibility                                                                                                                      |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Layer                 | Responsibility                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **Application**       | Calls `mutate()`, `flush()`, and subscribes to events — or use [`syncforge-react`](./packages/react/README.md) hooks in React apps |
-| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                               |
-| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                         |
-| **Storage Adapter**   | Persists the operation queue across reloads                                                                                         |
-| **Backend**           | Your existing API — SyncForge does not replace it                                                                                   |
-| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow                                                                     |
+| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                              |
+| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                        |
+| **Storage Adapter**   | Persists the operation queue across reloads                                                                                        |
+| **Backend**           | Your existing API — SyncForge does not replace it                                                                                  |
+| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow                                                                    |
 
 ## How it works
 
@@ -545,7 +548,7 @@ SyncForge does **not** own your application state. You pass optional `context` a
 
 **On reload:** pending operations are hydrated from storage but **`apply` is not re-run**. Reconcile UI from your own state + `getPending()`. If a hydrated op later fails, registry rollback uses `optimisticData`.
 
-**Failed operations:** use `getFailed()` and `retry(id)` — resets to `pending`, clears `lastError`, does **not** re-run `apply`.
+**Failed operations:** use `getFailed()` and `retry(id)` — or `retryAllFailed()` for bulk recovery. Both reset to `pending`, clear `lastError`, and do **not** re-run `apply`.
 
 ```typescript
 const sync = createSyncEngine({
@@ -568,10 +571,16 @@ await sync.mutate("createOrder", order, {
   optimisticData: { tempId: order.id },
 })
 
-// After terminal failure:
+// After terminal failure — single operation:
 const failed = await sync.getFailed()
 if (failed.length > 0) {
   await sync.retry(failed[0].id)
+  await sync.flush()
+}
+
+// Bulk recovery:
+const retried = await sync.retryAllFailed()
+if (retried > 0) {
   await sync.flush()
 }
 ```
@@ -580,14 +589,14 @@ In React, subscribe to `operation:optimistic` and `operation:rollback` via `useS
 
 ## Why use SyncForge?
 
-| You get                     | Why it matters                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Offline-first by design** | User actions are captured even when the network is not available                                    |
+| You get                     | Why it matters                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Offline-first by design** | User actions are captured even when the network is not available                                   |
 | **Framework-agnostic**      | Use with React ([`syncforge-react`](./packages/react/README.md)), Vue, Svelte, or plain JavaScript |
-| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                          |
-| **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                 |
-| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                 |
-| **Small surface area**      | Not a database, not a state manager, not a networking framework                                     |
+| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                         |
+| **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                |
+| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                |
+| **Small surface area**      | Not a database, not a state manager, not a networking framework                                    |
 
 **Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it — including optimistic UI when you own the store.
 
@@ -625,7 +634,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Exponential and linear retry strategies
 - [x] Optimistic updates
 - [x] React integration — [`syncforge-react`](./packages/react/README.md)
-- [ ] `retryAllFailed()` bulk helper (v0.6+)
+- [x] `retryAllFailed()` bulk helper
 
 ## License
 
