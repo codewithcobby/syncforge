@@ -146,6 +146,7 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `getFailed()`                     | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `failed` (terminal transport failure).                                                                         |
 | `retry(id)`                       | `id`: `string`                                                             | `Promise<boolean>`                | Re-queue a failed operation (`pending`, `retries = 0`, clears `lastError`). Does not re-run `apply`.                                  |
 | `retryAllFailed()`                | —                                                                          | `Promise<number>`                 | Re-queue all failed operations. Returns count of operations actually re-queued. Does not call `flush()`.                              |
+| `compact()`                       | —                                                                          | `Promise<number>`                 | Remove all `completed` operations from storage. Preserves `pending`, `syncing`, and `failed`. Returns count removed.                  |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -587,6 +588,28 @@ if (retried > 0) {
 
 In React, subscribe to `operation:optimistic` and `operation:rollback` via `useSyncEngine().on()` — `useSyncStatus()` stays sync-queue focused (no forced re-renders for optimistic UI). See [`syncforge-react` optimistic events](./packages/react/README.md#optimistic-events).
 
+## Queue compaction
+
+After a successful `flush()`, operations stay in storage with `status === "completed"` until removed. Long-lived PWAs can accumulate thousands of completed rows, slowing hydration and growing IndexedDB.
+
+Call `compact()` to remove completed operations while preserving `pending`, `syncing`, and `failed`:
+
+```typescript
+await sync.flush()
+const removed = await sync.compact()
+if (removed > 0) {
+  console.log(`Cleaned ${removed} completed operations`)
+}
+```
+
+**When to call:**
+
+- After successful `flush()` in batch workflows
+- On app startup (after the engine hydrates)
+- Periodically in long-lived PWAs
+
+`compact()` hydrates first, then waits for any active `flush()` to finish before removing completed operations. If persistence fails, the call rejects and storage remains unchanged; reload restores the persisted queue.
+
 ## Why use SyncForge?
 
 | You get                     | Why it matters                                                                                     |
@@ -635,6 +658,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Optimistic updates
 - [x] React integration — [`syncforge-react`](./packages/react/README.md)
 - [x] `retryAllFailed()` bulk helper
+- [x] `compact()` queue cleanup
 
 ## License
 

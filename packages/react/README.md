@@ -303,6 +303,7 @@ Returns the **same** `SyncEngine` reference passed to the provider.
 | `getFailed()`                                | List operations with status `failed`                                                         |
 | `retry(id)`                                  | Re-queue a failed operation (clears `lastError`; does not re-run `apply`)                    |
 | `retryAllFailed()`                           | Re-queue all failed operations; returns count of operations actually re-queued               |
+| `compact()`                                  | Remove completed operations from storage; returns count removed                              |
 | `on(type, listener)` / `off(type, listener)` | Lifecycle events (advanced)                                                                  |
 | `remove(id)` / `clear()` / `destroy()`       | Queue management                                                                             |
 
