@@ -685,6 +685,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] `inspect()` queue snapshot
 - [x] `queue:changed` event
 - [x] `useSyncSnapshot()` React hook
+- [x] `usePendingOperations()` / `useFailedOperations()` convenience hooks
 
 ## License
 

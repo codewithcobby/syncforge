@@ -1,6 +1,6 @@
 {
   "name": "syncforge-react",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "React bindings for SyncForge — provider and hooks for offline-first mutation sync.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
