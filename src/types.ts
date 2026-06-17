@@ -81,6 +81,21 @@ export interface InspectSnapshot {
   operations?: SyncOperation[]
 }
 
+export interface MetricsSnapshot {
+  /** New operations enqueued via `mutate()` this session (not `retry()` re-queues). */
+  totalQueued: number
+  /** Operations that reached `operation:succeeded` this session. */
+  totalSucceeded: number
+  /** Operations that reached terminal `operation:failed` this session. */
+  totalFailed: number
+  /** Transport failures this session (each failed send attempt; see README). */
+  totalRetried: number
+  /** `totalRetried / totalSucceeded` when `totalSucceeded > 0`, else `0`. */
+  averageRetries: number
+  /** When the last `flush()` batch completed with at least one success; `null` if none yet. */
+  lastSuccessfulFlushAt: Date | null
+}
+
 export interface SyncEngine {
   mutate<TPayload = unknown, TOptimisticData = unknown>(
     type: string,
@@ -93,6 +108,7 @@ export interface SyncEngine {
   retryAllFailed(): Promise<number>
   compact(): Promise<number>
   inspect(options?: InspectOptions): Promise<InspectSnapshot>
+  getMetrics(): MetricsSnapshot
   remove(id: string): Promise<boolean>
   clear(): Promise<void>
   flush(): Promise<FlushResult>
