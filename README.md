@@ -162,6 +162,8 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 #### Storage adapters
 
+**Full guide:** [docs/storage-adapters.md](./docs/storage-adapters.md) — decision matrix, per-adapter setup, migration, and limits.
+
 | Environment  | Recommended adapter               |
 | ------------ | --------------------------------- |
 | Browser      | `createIndexedDbStorage()`        |
@@ -169,13 +171,13 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | Capacitor    | `createCapacitorStorageAdapter()` |
 | Tests / Node | `createMemoryStorage()`           |
 
-| Adapter                           | Also suitable for                                 |
-| --------------------------------- | ------------------------------------------------- |
-| `createIndexedDbStorage()`        | Production PWAs, large queues, offline-first apps |
-| `createLocalStorageStorage()`     | Small widgets, prototypes, simple browser apps    |
-| `createAsyncStorageAdapter()`     | React Native / Expo apps                          |
-| `createCapacitorStorageAdapter()` | Capacitor hybrid mobile apps                      |
-| `createMemoryStorage()`           | Node, unit tests, scripts (no persistence)        |
+| Adapter      | Factory                           | Environment      | Durability | Size limit | Package                                                   |
+| ------------ | --------------------------------- | ---------------- | ---------- | ---------- | --------------------------------------------------------- |
+| Memory       | `createMemoryStorage()`           | Tests, Node, SSR | None       | RAM        | `syncforge`                                               |
+| IndexedDB    | `createIndexedDbStorage()`        | Browser          | Full       | Large      | `syncforge`                                               |
+| LocalStorage | `createLocalStorageStorage()`     | Browser          | Full       | ~5MB       | `syncforge`                                               |
+| AsyncStorage | `createAsyncStorageAdapter()`     | React Native     | Full       | Platform   | `syncforge` + `@react-native-async-storage/async-storage` |
+| Capacitor    | `createCapacitorStorageAdapter()` | Hybrid mobile    | Full       | Platform   | `syncforge` + `@capacitor/preferences`                    |
 
 | Factory                                  | Options                                                                                           | Environment                                       |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -184,6 +186,10 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `createLocalStorageStorage(options?)`    | `key?` (default `"syncforge-queue"`), `prefix?` (default `""`)                                    | Browser only (localStorage)                       |
 | `createAsyncStorageAdapter(options)`     | `asyncStorage` (required), `key?`, `prefix?` — inject `@react-native-async-storage/async-storage` | React Native (injected AsyncStorage)              |
 | `createCapacitorStorageAdapter(options)` | `preferences` (required), `key?`, `prefix?` — inject `@capacitor/preferences`                     | Capacitor (injected Preferences)                  |
+
+**Examples:** [react-offline-orders](./examples/react-offline-orders) (IndexedDB) · [localstorage](./examples/localstorage) · [react-native-asyncstorage](./examples/react-native-asyncstorage) · [capacitor-preferences](./examples/capacitor-preferences) · [examples index](./examples/README.md)
+
+**Migrating adapters:** manual load → `reviveOperations()` → save — see [migration guide](./docs/storage-adapters.md#migrating-between-adapters).
 
 #### Lifecycle events (`SyncEventTypes`)
 
@@ -271,7 +277,9 @@ When `jitter: true` on exponential backoff, the actual delay is randomized betwe
 
 See [React integration](#react-integration) and the [`syncforge-react` README](./packages/react/README.md).
 
-### Browser example
+### IndexedDB adapter
+
+Production browser default. See [IndexedDB guide](./docs/storage-adapters.md#indexeddb) for options, limits, and migration.
 
 ```typescript
 import { createIndexedDbStorage, createSyncEngine } from "syncforge"
@@ -306,13 +314,15 @@ console.log(result) // { successful: 1, failed: 0 }
 
 `createIndexedDbStorage()` is **browser-only** — it requires IndexedDB (not available in Node.js or SSR). Use `createMemoryStorage()` for tests, scripts, and server environments. Set a unique `dbName` per app on the same origin to avoid queue collisions.
 
+Runnable demo: [examples/react-offline-orders](./examples/react-offline-orders/README.md).
+
 For lightweight browser apps that do not need IndexedDB capacity, see [LocalStorage adapter](#localstorage-adapter) below (`createLocalStorageStorage()`).
 
 **Auto sync on reconnect** is **enabled by default** in browsers (`autoSync` defaults to `true`). When the network comes back, SyncForge calls `flush()` for you — no `window.addEventListener("online", ...)` boilerplate. Set `autoSync: false` for full manual control. Node.js and SSR ignore this option.
 
 ### LocalStorage adapter
 
-For small widgets, prototypes, and simple apps that do not need IndexedDB:
+For small widgets, prototypes, and simple apps that do not need IndexedDB. See [LocalStorage guide](./docs/storage-adapters.md#localstorage) and [example snippet](./examples/localstorage/README.md).
 
 ```typescript
 import { createLocalStorageStorage, createSyncEngine } from "syncforge"
@@ -339,7 +349,7 @@ const sync = createSyncEngine({
 
 ### React Native (AsyncStorage)
 
-Install `@react-native-async-storage/async-storage` in your app (not a SyncForge core dependency — inject the instance):
+Install `@react-native-async-storage/async-storage` in your app (not a SyncForge core dependency — inject the instance). See [AsyncStorage guide](./docs/storage-adapters.md#asyncstorage).
 
 ```bash
 npm install @react-native-async-storage/async-storage
@@ -368,7 +378,7 @@ Pass the full AsyncStorage object — SyncForge uses only `getItem`, `setItem`, 
 
 ### Capacitor (Preferences)
 
-Install `@capacitor/preferences` in your app (not a SyncForge core dependency — inject the instance):
+Install `@capacitor/preferences` in your app (not a SyncForge core dependency — inject the instance). See [Capacitor guide](./docs/storage-adapters.md#capacitor).
 
 ```bash
 npm install @capacitor/preferences
@@ -403,7 +413,9 @@ Pass the full Preferences object — SyncForge uses only `get`, `set`, and optio
 
 **Empty queue:** when injected Preferences supports `remove`, SyncForge clears the storage key instead of persisting `"[]"`.
 
-### Node.js and tests
+### Memory storage
+
+In-memory queue for tests, Node, and SSR — no persistence across reloads. See [Memory guide](./docs/storage-adapters.md#memory).
 
 ```typescript
 import { createMemoryStorage, createSyncEngine } from "syncforge"
@@ -555,7 +567,7 @@ flowchart LR
 | **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                        |
 | **Storage Adapter**   | Persists the operation queue across reloads                                                                                        |
 | **Backend**           | Your existing API — SyncForge does not replace it                                                                                  |
-| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow                                                                    |
+| **Persistence**       | Memory, IndexedDB, LocalStorage, AsyncStorage, and Capacitor Preferences adapters                                                  |
 
 ## How it works
 

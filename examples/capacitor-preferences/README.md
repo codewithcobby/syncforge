@@ -76,6 +76,8 @@ export function App() {
 
 ## Further reading
 
+- [Capacitor adapter guide](../../docs/storage-adapters.md#capacitor)
+- [Storage adapters overview](../../docs/storage-adapters.md)
 - Transport, retry, and optimistic patterns: [SyncForge README](../../README.md)
 - Large queues: run `compact()` and monitor `getHealth()` — prefer smaller payloads on Preferences
-- SQLite: not included in SyncForge core — see README Capacitor section for trade-offs
+- SQLite: not included in SyncForge core — see Capacitor guide for trade-offs
