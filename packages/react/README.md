@@ -223,15 +223,15 @@ With `autoSync: true` (default), going back online triggers `flush()` automatica
 
 ## Hooks
 
-| Hook                | Returns                      | Use when                                                                            |
-| ------------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
-| `useSyncEngine()`   | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
-| `useSyncMutate()`   | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
-| `useSyncFlush()`    | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
-| `useSyncStatus()`   | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
-| `useSyncSnapshot()` | `InspectSnapshot`            | Full queue snapshot (`pending`, `failed`, `completed`, …) with automatic re-renders |
-| `usePendingOperations()` | `SyncOperation[]`       | List pending operations for retry/admin UIs                                         |
-| `useFailedOperations()`  | `SyncOperation[]`       | List failed operations for retry panels                                             |
+| Hook                     | Returns                      | Use when                                                                            |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------- |
+| `useSyncEngine()`        | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
+| `useSyncMutate()`        | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
+| `useSyncFlush()`         | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
+| `useSyncStatus()`        | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
+| `useSyncSnapshot()`      | `InspectSnapshot`            | Full queue snapshot (`pending`, `failed`, `completed`, …) with automatic re-renders |
+| `usePendingOperations()` | `SyncOperation[]`            | List pending operations for retry/admin UIs                                         |
+| `useFailedOperations()`  | `SyncOperation[]`            | List failed operations for retry panels                                             |
 
 All hooks throw if used outside `SyncForgeProvider`.
 
@@ -403,14 +403,6 @@ Optional tracked `flush()` that sets `useSyncStatus().isSyncing` while running. 
 ### `useSyncStatus()`
 
 Read-only UI state from lifecycle events + optional tracked flush. Prefer `const status = useSyncStatus()` so new fields can be added without breaking call sites.
-
-### `useSyncSnapshot()`
-
-Read-only queue snapshot from `engine.inspect()`, subscribed via `queue:changed`. Uses `useSyncExternalStore` — no manual revision counters.
-
-### `usePendingOperations()` / `useFailedOperations()`
-
-Filtered operation lists from `useSyncSnapshot()`. See [usePendingOperations() / useFailedOperations()](#usependingoperations--usefailedoperations) above.
 
 ### Lifecycle events
 
