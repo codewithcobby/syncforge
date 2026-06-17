@@ -166,13 +166,15 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | ----------------------------- | ------------------------------------------------- |
 | `createIndexedDbStorage()`    | Production PWAs, large queues, offline-first apps |
 | `createLocalStorageStorage()` | Small widgets, prototypes, testing, simple apps   |
+| `createAsyncStorageAdapter()` | React Native / Expo apps                          |
 | `createMemoryStorage()`       | Node, unit tests, scripts (no persistence)        |
 
-| Factory                               | Options                                                                  | Environment                                       |
-| ------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
-| `createMemoryStorage()`               | —                                                                        | Node, tests, anywhere (in-memory; lost on reload) |
-| `createIndexedDbStorage(options?)`    | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`) | Browser only (IndexedDB)                          |
-| `createLocalStorageStorage(options?)` | `key?` (default `"syncforge-queue"`), `prefix?` (default `""`)           | Browser only (localStorage)                       |
+| Factory                               | Options                                                                                           | Environment                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `createMemoryStorage()`               | —                                                                                                 | Node, tests, anywhere (in-memory; lost on reload) |
+| `createIndexedDbStorage(options?)`    | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`)                          | Browser only (IndexedDB)                          |
+| `createLocalStorageStorage(options?)` | `key?` (default `"syncforge-queue"`), `prefix?` (default `""`)                                    | Browser only (localStorage)                       |
+| `createAsyncStorageAdapter(options)`  | `asyncStorage` (required), `key?`, `prefix?` — inject `@react-native-async-storage/async-storage` | React Native (injected AsyncStorage)              |
 
 #### Lifecycle events (`SyncEventTypes`)
 
@@ -325,6 +327,35 @@ const sync = createSyncEngine({
 **Quota errors:** when storage is full, `saveOperations()` throws `StorageError`:
 
 > LocalStorage quota exceeded (~5MB limit). Consider compact(), reducing queue size, or switching to createIndexedDbStorage().
+
+### React Native (AsyncStorage)
+
+Install `@react-native-async-storage/async-storage` in your app (not a SyncForge core dependency — inject the instance):
+
+```bash
+npm install @react-native-async-storage/async-storage
+```
+
+```typescript
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { createAsyncStorageAdapter, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  storage: createAsyncStorageAdapter({ asyncStorage: AsyncStorage, key: "syncforge-queue" }),
+  transport: myTransport,
+  autoSync: false,
+})
+```
+
+Pass the full AsyncStorage object — SyncForge uses only `getItem`, `setItem`, and optionally `removeItem`. Other methods (`multiGet`, `mergeItem`, `clear`, etc.) are ignored.
+
+**Prefix and key:** same rules as [LocalStorage](#localstorage-adapter) — `` `${prefix ?? ""}${key ?? "syncforge-queue"}` ``.
+
+**Reconnect / flush:** React Native has no `window` `online` event. Set `autoSync: false` and call `sync.flush()` when connectivity returns (e.g. via `@react-native-community/netinfo`). Optionally flush on `AppState` `active` when the app returns to foreground. See [examples/react-native-asyncstorage](./examples/react-native-asyncstorage/README.md).
+
+**Limits:** same single-document rewrite model as other adapters; prefer smaller queues and run `compact()` periodically. Use `getHealth()` to monitor growth. IndexedDB is not available on RN.
+
+**Empty queue:** when injected AsyncStorage supports `removeItem`, SyncForge clears the storage key instead of persisting `"[]"`.
 
 ### Node.js and tests
 
@@ -865,6 +896,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Memory storage adapter
 - [x] IndexedDB storage adapter
 - [x] LocalStorage storage adapter
+- [x] React Native AsyncStorage adapter
 - [x] Transport adapter
 - [x] Lifecycle events
 - [x] Retry strategy interface
