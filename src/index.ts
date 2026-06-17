@@ -2,6 +2,8 @@ export { createSyncEngine } from "./sync-engine.js"
 
 export type {
   FlushResult,
+  InspectOptions,
+  InspectSnapshot,
   MutateOptions,
   OptimisticApplyFn,
   OptimisticHandler,
