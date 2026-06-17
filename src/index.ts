@@ -2,6 +2,11 @@ export { createSyncEngine } from "./sync-engine.js"
 
 export type {
   FlushResult,
+  HealthOptions,
+  HealthSignal,
+  HealthSnapshot,
+  HealthStatus,
+  HealthThresholds,
   InspectOptions,
   InspectSnapshot,
   MetricsSnapshot,
@@ -15,6 +20,8 @@ export type {
   SyncOperation,
   SyncOperationStatus,
 } from "./types.js"
+
+export { DEFAULT_HEALTH_THRESHOLDS } from "./health.js"
 
 export { SyncOperationStatuses } from "./types.js"
 

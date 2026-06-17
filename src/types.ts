@@ -96,6 +96,51 @@ export interface MetricsSnapshot {
   lastSuccessfulFlushAt: Date | null
 }
 
+export type HealthStatus = "healthy" | "degraded" | "unhealthy"
+
+export type HealthSignal =
+  | "queueSize"
+  | "pendingCount"
+  | "oldestPendingAgeMs"
+  | "failureRate"
+  | "storageBytesEstimate"
+
+export interface HealthThresholds {
+  queueSizeDegraded?: number
+  queueSizeUnhealthy?: number
+  pendingCountDegraded?: number
+  pendingCountUnhealthy?: number
+  oldestPendingAgeMsDegraded?: number
+  oldestPendingAgeMsUnhealthy?: number
+  failureRateDegraded?: number
+  failureRateUnhealthy?: number
+  storageBytesDegraded?: number
+  storageBytesUnhealthy?: number
+  /** Min terminal outcomes (succeeded + failed) before failure-rate affects status */
+  failureRateMinSample?: number
+}
+
+export interface HealthOptions {
+  thresholds?: HealthThresholds
+  /** Reference time for age calculations; default `Date.now()` */
+  now?: number
+}
+
+export interface HealthSnapshot {
+  queueSize: number
+  pendingCount: number
+  failedCount: number
+  completedCount: number
+  /** `0` when `pendingCount === 0` */
+  oldestPendingAgeMs: number
+  /** UTF-8 JSON serialized queue size */
+  storageBytesEstimate: number
+  /** Session: `totalFailed / (totalSucceeded + totalFailed)` */
+  failureRate: number
+  status: HealthStatus
+  breachedSignals: HealthSignal[]
+}
+
 export interface SyncEngine {
   mutate<TPayload = unknown, TOptimisticData = unknown>(
     type: string,
@@ -109,6 +154,7 @@ export interface SyncEngine {
   compact(): Promise<number>
   inspect(options?: InspectOptions): Promise<InspectSnapshot>
   getMetrics(): MetricsSnapshot
+  getHealth(options?: HealthOptions): Promise<HealthSnapshot>
   remove(id: string): Promise<boolean>
   clear(): Promise<void>
   flush(): Promise<FlushResult>
