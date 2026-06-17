@@ -64,6 +64,23 @@ export interface FlushResult {
   failed: number
 }
 
+export interface InspectOptions {
+  /** When set, attach shallow copies of operations matching these statuses. Counts are always full-queue. */
+  operations?: SyncOperationStatus[]
+}
+
+export interface InspectSnapshot {
+  pending: number
+  failed: number
+  completed: number
+  syncing: number
+  total: number
+  /** True when any operation has status "syncing". */
+  isSyncing: boolean
+  /** Present only when `options.operations` is non-empty. Shallow copies — mutating does not affect the queue. */
+  operations?: SyncOperation[]
+}
+
 export interface SyncEngine {
   mutate<TPayload = unknown, TOptimisticData = unknown>(
     type: string,
@@ -75,6 +92,7 @@ export interface SyncEngine {
   retry(id: string): Promise<boolean>
   retryAllFailed(): Promise<number>
   compact(): Promise<number>
+  inspect(options?: InspectOptions): Promise<InspectSnapshot>
   remove(id: string): Promise<boolean>
   clear(): Promise<void>
   flush(): Promise<FlushResult>

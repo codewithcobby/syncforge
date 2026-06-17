@@ -304,6 +304,7 @@ Returns the **same** `SyncEngine` reference passed to the provider.
 | `retry(id)`                                  | Re-queue a failed operation (clears `lastError`; does not re-run `apply`)                    |
 | `retryAllFailed()`                           | Re-queue all failed operations; returns count of operations actually re-queued               |
 | `compact()`                                  | Remove completed operations from storage; returns count removed                              |
+| `inspect(options?)`                          | Read-only queue snapshot (counts; optional `operations` filter for shallow copies)           |
 | `on(type, listener)` / `off(type, listener)` | Lifecycle events (advanced)                                                                  |
 | `remove(id)` / `clear()` / `destroy()`       | Queue management                                                                             |
 

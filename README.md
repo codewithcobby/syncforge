@@ -147,6 +147,7 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `retry(id)`                       | `id`: `string`                                                             | `Promise<boolean>`                | Re-queue a failed operation (`pending`, `retries = 0`, clears `lastError`). Does not re-run `apply`.                                  |
 | `retryAllFailed()`                | —                                                                          | `Promise<number>`                 | Re-queue all failed operations. Returns count of operations actually re-queued. Does not call `flush()`.                              |
 | `compact()`                       | —                                                                          | `Promise<number>`                 | Remove all `completed` operations from storage. Preserves `pending`, `syncing`, and `failed`. Returns count removed.                  |
+| `inspect(options?)`               | `options?`: `InspectOptions`                                               | `Promise<InspectSnapshot>`        | Read-only queue snapshot — status counts; optional filtered operation list via `operations`.                                          |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -610,6 +611,20 @@ if (removed > 0) {
 
 `compact()` hydrates first, then waits for any active `flush()` to finish before removing completed operations. If persistence fails, the call rejects and storage remains unchanged; reload restores the persisted queue.
 
+## Queue inspection
+
+For diagnostics and support tooling, `inspect()` returns a read-only snapshot of queue state — no persistence, no side effects. Point-in-time counts for every status; does not wait for an active `flush()` to finish.
+
+```typescript
+const snapshot = await sync.inspect()
+// { pending, failed, completed, syncing, total, isSyncing }
+
+const supportView = await sync.inspect({ operations: ["failed"] })
+// supportView.operations — shallow copies; mutating them does not affect the queue
+```
+
+**Counts only by default** — safe when thousands of completed operations exist. Pass `operations: ["pending", "failed"]` (or other statuses) only when you need operation rows. Pair with `compact()` so `completed` counts stay manageable.
+
 ## Why use SyncForge?
 
 | You get                     | Why it matters                                                                                     |
@@ -659,6 +674,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] React integration — [`syncforge-react`](./packages/react/README.md)
 - [x] `retryAllFailed()` bulk helper
 - [x] `compact()` queue cleanup
+- [x] `inspect()` queue snapshot
 
 ## License
 

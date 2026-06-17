@@ -8,6 +8,8 @@ import { nanoid } from "nanoid"
 import {
   SyncOperationStatuses,
   type FlushResult,
+  type InspectOptions,
+  type InspectSnapshot,
   type MutateOptions,
   type SyncEngine,
   type SyncEngineOptions,
@@ -265,6 +267,50 @@ export function createSyncEngine<TContext = unknown>(
       )
       await persist()
       return completedCount
+    },
+
+    async inspect(options?: InspectOptions): Promise<InspectSnapshot> {
+      await hydrate()
+
+      let pending = 0
+      let failed = 0
+      let completed = 0
+      let syncing = 0
+
+      for (const operation of operations) {
+        switch (operation.status) {
+          case SyncOperationStatuses.Pending:
+            pending += 1
+            break
+          case SyncOperationStatuses.Failed:
+            failed += 1
+            break
+          case SyncOperationStatuses.Completed:
+            completed += 1
+            break
+          case SyncOperationStatuses.Syncing:
+            syncing += 1
+            break
+        }
+      }
+
+      const snapshot: InspectSnapshot = {
+        pending,
+        failed,
+        completed,
+        syncing,
+        total: operations.length,
+        isSyncing: syncing > 0,
+      }
+
+      if (options?.operations?.length) {
+        const statuses = new Set(options.operations)
+        snapshot.operations = operations
+          .filter((operation) => statuses.has(operation.status))
+          .map((operation) => ({ ...operation }))
+      }
+
+      return snapshot
     },
 
     async remove(id: string): Promise<boolean> {
