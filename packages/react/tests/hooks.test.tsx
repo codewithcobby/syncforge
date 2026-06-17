@@ -13,6 +13,8 @@ import { SyncForgeProvider } from "../src/provider.js"
 import { useSyncEngine } from "../src/hooks/useSyncEngine.js"
 import { useSyncFlush } from "../src/hooks/useSyncFlush.js"
 import { useSyncStatus } from "../src/hooks/useSyncStatus.js"
+import { useSyncSnapshot } from "../src/hooks/useSyncSnapshot.js"
+import { getQueueChangedListenerCount } from "../src/subscriptions/queueSnapshotStore.js"
 
 class MockTransport implements TransportAdapter {
   sent: SyncOperation[] = []
@@ -264,6 +266,187 @@ describe("useSyncStatus", () => {
     unmount()
     expect(offSpy).toHaveBeenCalled()
     expect(engine.flush).toBe(originalFlush)
+  })
+})
+
+function OutsideSnapshotProbe() {
+  useSyncSnapshot()
+  return null
+}
+
+function SnapshotProbe({
+  options,
+}: {
+  options?: { operations?: Array<"pending" | "failed" | "completed" | "syncing"> }
+}) {
+  const snapshot = useSyncSnapshot(options)
+  return (
+    <div>
+      <span data-testid="pending">{snapshot.pending}</span>
+      <span data-testid="failed">{snapshot.failed}</span>
+      <span data-testid="completed">{snapshot.completed}</span>
+      <span data-testid="total">{snapshot.total}</span>
+      <span data-testid="operations">{snapshot.operations?.length ?? 0}</span>
+    </div>
+  )
+}
+
+describe("useSyncSnapshot", () => {
+  it("throws outside provider", () => {
+    expect(() => render(<OutsideSnapshotProbe />)).toThrow(
+      "SyncForge hooks must be used within a SyncForgeProvider",
+    )
+  })
+
+  it("hydrates initial snapshot on subscribe without waiting for queue:changed", async () => {
+    const engine = createSyncEngine({ storage: createMemoryStorage() })
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+    })
+
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await waitFor(() => {
+      expect(view.getByTestId("pending").textContent).toBe("1")
+      expect(view.getByTestId("total").textContent).toBe("1")
+    })
+  })
+
+  it("updates counts after mutate", async () => {
+    const engine = createSyncEngine({ storage: createMemoryStorage() })
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await waitFor(() => {
+      expect(view.getByTestId("pending").textContent).toBe("0")
+    })
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("pending").textContent).toBe("1")
+    })
+  })
+
+  it("updates counts after successful flush", async () => {
+    const transport = new MockTransport()
+    const engine = createSyncEngine({ transport, storage: createMemoryStorage() })
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+      await engine.flush()
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("pending").textContent).toBe("0")
+      expect(view.getByTestId("completed").textContent).toBe("1")
+    })
+  })
+
+  it("updates failed count after terminal failure", async () => {
+    const transport = new FailingTransport()
+    const engine = createSyncEngine({
+      transport,
+      storage: createMemoryStorage(),
+      maxRetries: 1,
+    })
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+      await engine.flush()
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("failed").textContent).toBe("1")
+      expect(view.getByTestId("pending").textContent).toBe("0")
+    })
+  })
+
+  it("refreshes after compact()", async () => {
+    const transport = new MockTransport()
+    const engine = createSyncEngine({ transport, storage: createMemoryStorage() })
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+      await engine.flush()
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("completed").textContent).toBe("1")
+    })
+
+    await act(async () => {
+      await engine.compact()
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("completed").textContent).toBe("0")
+      expect(view.getByTestId("total").textContent).toBe("0")
+    })
+  })
+
+  it("includes operations when options.operations is set", async () => {
+    const transport = new FailingTransport()
+    const engine = createSyncEngine({
+      transport,
+      storage: createMemoryStorage(),
+      maxRetries: 1,
+    })
+    const view = render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe options={{ operations: ["failed"] }} />
+      </SyncForgeProvider>,
+    )
+
+    await act(async () => {
+      await engine.mutate("createOrder", { id: 1 })
+      await engine.flush()
+    })
+
+    await waitFor(() => {
+      expect(view.getByTestId("failed").textContent).toBe("1")
+      expect(view.getByTestId("operations").textContent).toBe("1")
+    })
+  })
+
+  it("shares one queue:changed listener across multiple consumers", async () => {
+    const engine = createSyncEngine({ storage: createMemoryStorage() })
+
+    render(
+      <SyncForgeProvider engine={engine}>
+        <SnapshotProbe />
+        <SnapshotProbe />
+      </SyncForgeProvider>,
+    )
+
+    await waitFor(() => {
+      expect(getQueueChangedListenerCount(engine)).toBe(1)
+    })
   })
 })
 

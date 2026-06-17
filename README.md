@@ -176,7 +176,15 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `operation:rollback`   | After rollback handler on terminal failure                |
 | `operation:failed`     | Max retries exceeded (after rollback when handlers exist) |
 
-Event payload: `{ type, operation, timestamp, error? }`. Rollback and failed events include `error`.
+**Queue lifecycle** (separate from operation lifecycle):
+
+| Event           | When                                                                |
+| --------------- | ------------------------------------------------------------------- |
+| `queue:changed` | After any successful queue mutation (membership, status, or counts) |
+
+Operation events carry `{ type, operation, timestamp, error? }`. `queue:changed` carries `{ type, timestamp }` only — no `operation` field. Read-only APIs (`inspect()`, `hydrate()`) do not emit.
+
+`retryAllFailed()` emits one `queue:changed` per successfully retried operation (same as calling `retry(id)` in a loop).
 
 #### Event ordering (public contract)
 
@@ -675,6 +683,8 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] `retryAllFailed()` bulk helper
 - [x] `compact()` queue cleanup
 - [x] `inspect()` queue snapshot
+- [x] `queue:changed` event
+- [x] `useSyncSnapshot()` React hook
 
 ## License
 

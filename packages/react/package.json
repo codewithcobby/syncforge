@@ -1,6 +1,6 @@
 {
   "name": "syncforge-react",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "description": "React bindings for SyncForge — provider and hooks for offline-first mutation sync.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
@@ -36,7 +36,7 @@
   "peerDependencies": {
     "react": "^18 || ^19",
     "react-dom": "^18 || ^19",
-    "syncforge": "^0.5.1"
+    "syncforge": "^0.7.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.0",

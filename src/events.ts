@@ -10,6 +10,9 @@ import type { SyncOperation } from "./types.js"
  * terminal failure: operation:syncing → operation:rollback → operation:failed
  * retry(id): status reset → persist → operation:queued
  * retryAllFailed(): per operation, same as retry(id); sequential when multiple ops
+ *
+ * queue:changed fires after any successful queue mutation (membership, status, or counts).
+ * Read-only APIs (inspect(), hydrate()) do not emit. No operation field on this event.
  */
 export const SyncEventTypes = {
   Queued: "operation:queued",
@@ -18,13 +21,14 @@ export const SyncEventTypes = {
   Succeeded: "operation:succeeded",
   Rollback: "operation:rollback",
   Failed: "operation:failed",
+  QueueChanged: "queue:changed",
 } as const
 
 export type SyncEventType = (typeof SyncEventTypes)[keyof typeof SyncEventTypes]
 
 export interface SyncEvent {
   type: SyncEventType
-  operation: SyncOperation
+  operation?: SyncOperation
   timestamp: Date
   error?: unknown
 }
