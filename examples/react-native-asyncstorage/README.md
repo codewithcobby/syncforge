@@ -76,5 +76,7 @@ export function App() {
 
 ## Further reading
 
+- [AsyncStorage adapter guide](../../docs/storage-adapters.md#asyncstorage)
+- [Storage adapters overview](../../docs/storage-adapters.md)
 - Transport, retry, and optimistic patterns: [SyncForge README](../../README.md)
 - Large queues: run `compact()` and monitor `getHealth()` — prefer smaller payloads on AsyncStorage
