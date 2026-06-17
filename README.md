@@ -162,10 +162,17 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 #### Storage adapters
 
-| Factory                            | Options                                                                  | Environment                                       |
-| ---------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
-| `createMemoryStorage()`            | —                                                                        | Node, tests, anywhere (in-memory; lost on reload) |
-| `createIndexedDbStorage(options?)` | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`) | Browser only (IndexedDB)                          |
+| Adapter                       | Recommended for                                   |
+| ----------------------------- | ------------------------------------------------- |
+| `createIndexedDbStorage()`    | Production PWAs, large queues, offline-first apps |
+| `createLocalStorageStorage()` | Small widgets, prototypes, testing, simple apps   |
+| `createMemoryStorage()`       | Node, unit tests, scripts (no persistence)        |
+
+| Factory                               | Options                                                                  | Environment                                       |
+| ------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
+| `createMemoryStorage()`               | —                                                                        | Node, tests, anywhere (in-memory; lost on reload) |
+| `createIndexedDbStorage(options?)`    | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`) | Browser only (IndexedDB)                          |
+| `createLocalStorageStorage(options?)` | `key?` (default `"syncforge-queue"`), `prefix?` (default `""`)           | Browser only (localStorage)                       |
 
 #### Lifecycle events (`SyncEventTypes`)
 
@@ -288,7 +295,36 @@ console.log(result) // { successful: 1, failed: 0 }
 
 `createIndexedDbStorage()` is **browser-only** — it requires IndexedDB (not available in Node.js or SSR). Use `createMemoryStorage()` for tests, scripts, and server environments. Set a unique `dbName` per app on the same origin to avoid queue collisions.
 
+For lightweight browser apps that do not need IndexedDB capacity, see [LocalStorage adapter](#localstorage-adapter) below (`createLocalStorageStorage()`).
+
 **Auto sync on reconnect** is **enabled by default** in browsers (`autoSync` defaults to `true`). When the network comes back, SyncForge calls `flush()` for you — no `window.addEventListener("online", ...)` boilerplate. Set `autoSync: false` for full manual control. Node.js and SSR ignore this option.
+
+### LocalStorage adapter
+
+For small widgets, prototypes, and simple apps that do not need IndexedDB:
+
+```typescript
+import { createLocalStorageStorage, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  storage: createLocalStorageStorage({ prefix: "my-app:", key: "syncforge-queue" }),
+  transport: myTransport,
+})
+```
+
+**Prefix and key:** resolved storage key is `` `${prefix ?? ""}${key ?? "syncforge-queue"}` ``. Include any separator in `prefix` (e.g. `"my-app:"`) — SyncForge concatenates as-is and does not insert colons or dashes.
+
+**When to use:** prototypes, embedded widgets, small queues, quick browser testing without `fake-indexeddb`.
+
+**When not to use:** large queues, payloads larger than a few KB each, or anything approaching [large-queue guidance](./docs/benchmarks/large-queue-methodology.md). Prefer `createIndexedDbStorage()` for production PWAs and offline-first apps.
+
+**Limits:** ~5MB per origin; underlying `localStorage` API is synchronous (the adapter wraps it in async methods only). The full queue is rewritten as one JSON document on every mutation — same model as IndexedDB.
+
+**Isolation:** use a unique `prefix` (with separator) or `key` per app/widget on shared origins.
+
+**Quota errors:** when storage is full, `saveOperations()` throws `StorageError`:
+
+> LocalStorage quota exceeded (~5MB limit). Consider compact(), reducing queue size, or switching to createIndexedDbStorage().
 
 ### Node.js and tests
 
@@ -828,6 +864,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Mutation queue
 - [x] Memory storage adapter
 - [x] IndexedDB storage adapter
+- [x] LocalStorage storage adapter
 - [x] Transport adapter
 - [x] Lifecycle events
 - [x] Retry strategy interface
