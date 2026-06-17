@@ -1,6 +1,6 @@
 {
   "name": "syncforge",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
