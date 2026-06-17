@@ -223,13 +223,15 @@ With `autoSync: true` (default), going back online triggers `flush()` automatica
 
 ## Hooks
 
-| Hook                | Returns                      | Use when                                                                            |
-| ------------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
-| `useSyncEngine()`   | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
-| `useSyncMutate()`   | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
-| `useSyncFlush()`    | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
-| `useSyncStatus()`   | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
-| `useSyncSnapshot()` | `InspectSnapshot`            | Full queue snapshot (`pending`, `failed`, `completed`, …) with automatic re-renders |
+| Hook                     | Returns                      | Use when                                                                            |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------- |
+| `useSyncEngine()`        | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
+| `useSyncMutate()`        | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
+| `useSyncFlush()`         | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
+| `useSyncStatus()`        | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
+| `useSyncSnapshot()`      | `InspectSnapshot`            | Full queue snapshot (`pending`, `failed`, `completed`, …) with automatic re-renders |
+| `usePendingOperations()` | `SyncOperation[]`            | List pending operations for retry/admin UIs                                         |
+| `useFailedOperations()`  | `SyncOperation[]`            | List failed operations for retry panels                                             |
 
 All hooks throw if used outside `SyncForgeProvider`.
 
@@ -278,6 +280,40 @@ Optional `InspectOptions` passthrough (e.g. `{ operations: ["failed"] }`) attach
 | `operations?` | `SyncOperation[]` | Present when `options.operations` is set                                         |
 
 **`useSyncStatus()` vs `useSyncSnapshot()`:** use status for lightweight pending/sync UI and `lastError`; use snapshot for full queue counts and inspection UIs. Optimistic **business data** remains app-owned — the hook reflects **queue** state only.
+
+### `usePendingOperations()` / `useFailedOperations()`
+
+Thin wrappers over `useSyncSnapshot({ operations: [...] })`. Return shallow copies of queue operations — same read-only guarantee as `inspect()`. Mutations (`retry`, `remove`) stay on `engine` via `useSyncEngine()`.
+
+```tsx
+import { usePendingOperations, useFailedOperations } from "syncforge-react"
+
+function RetryPanel() {
+  const failed = useFailedOperations()
+  const pending = usePendingOperations()
+
+  return (
+    <ul>
+      {failed.map((op) => (
+        <li key={op.id}>
+          {op.type} — {String(op.lastError)}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+| Hook                     | Equivalent core API   |
+| ------------------------ | --------------------- |
+| `usePendingOperations()` | `engine.getPending()` |
+| `useFailedOperations()`  | `engine.getFailed()`  |
+
+Operations in `syncing` status are not included in pending — matches `getPending()` behavior.
+
+**Tradeoff:** Using both hooks in the same tree registers two `queue:changed` listeners (one per filter). Each queue mutation triggers two `inspect()` calls. Acceptable for typical retry UIs; use `useSyncSnapshot()` alone if you need custom filters or fewer subscriptions.
+
+**Read-only:** Do not mutate returned operation objects — they are shallow copies and must not affect the queue.
 
 ### Optimistic events
 
