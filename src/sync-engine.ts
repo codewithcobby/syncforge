@@ -71,6 +71,13 @@ export function createSyncEngine<TContext = unknown>(
     })
   }
 
+  function emitQueueChanged(): void {
+    emitter.emit({
+      type: SyncEventTypes.QueueChanged,
+      timestamp: new Date(),
+    })
+  }
+
   function getRollbackHandlers(
     operation: SyncOperation,
   ): MergedOptimisticHandlers<TContext> {
@@ -97,6 +104,7 @@ export function createSyncEngine<TContext = unknown>(
       operation.status = SyncOperationStatuses.Syncing
       await persist()
       emitLifecycle(SyncEventTypes.Syncing, operation)
+      emitQueueChanged()
 
       try {
         await transport.send(operation)
@@ -104,6 +112,7 @@ export function createSyncEngine<TContext = unknown>(
         await persist()
         mergedHandlersMap.delete(operation.id)
         emitLifecycle(SyncEventTypes.Succeeded, operation)
+        emitQueueChanged()
         result.successful += 1
       } catch (error) {
         operation.retries += 1
@@ -121,11 +130,13 @@ export function createSyncEngine<TContext = unknown>(
           }
 
           emitLifecycle(SyncEventTypes.Failed, operation, error)
+          emitQueueChanged()
           result.failed += 1
         } else {
           operation.status = SyncOperationStatuses.Pending
           await persist()
           emitLifecycle(SyncEventTypes.Queued, operation)
+          emitQueueChanged()
           await delay(retry.getDelay(operation.retries))
         }
       }
@@ -170,6 +181,7 @@ export function createSyncEngine<TContext = unknown>(
     operation.lastError = undefined
     await persist()
     emitLifecycle(SyncEventTypes.Queued, operation)
+    emitQueueChanged()
 
     return true
   }
@@ -211,6 +223,7 @@ export function createSyncEngine<TContext = unknown>(
       }
 
       emitLifecycle(SyncEventTypes.Queued, operation as SyncOperation)
+      emitQueueChanged()
 
       return operation
     },
@@ -266,6 +279,7 @@ export function createSyncEngine<TContext = unknown>(
         (operation) => operation.status !== SyncOperationStatuses.Completed,
       )
       await persist()
+      emitQueueChanged()
       return completedCount
     },
 
@@ -324,6 +338,7 @@ export function createSyncEngine<TContext = unknown>(
       mergedHandlersMap.delete(id)
       operations.splice(index, 1)
       await persist()
+      emitQueueChanged()
       return true
     },
 
@@ -332,6 +347,7 @@ export function createSyncEngine<TContext = unknown>(
       operations = []
       mergedHandlersMap.clear()
       await persist()
+      emitQueueChanged()
     },
 
     flush,
@@ -344,6 +360,7 @@ export function createSyncEngine<TContext = unknown>(
       operations = []
       mergedHandlersMap.clear()
       await persist()
+      emitQueueChanged()
     },
   }
 }

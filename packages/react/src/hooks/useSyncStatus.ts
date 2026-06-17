@@ -31,10 +31,12 @@ export function useSyncStatus(): SyncStatus {
     }
 
     const onFailed = (event: SyncEvent) => {
-      setLastError({
-        operation: event.operation,
-        timestamp: event.timestamp,
-      })
+      if (event.operation) {
+        setLastError({
+          operation: event.operation,
+          timestamp: event.timestamp,
+        })
+      }
       void refreshPendingCount()
     }
 
