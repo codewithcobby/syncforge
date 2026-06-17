@@ -246,6 +246,27 @@ export function createSyncEngine<TContext = unknown>(
       return count
     },
 
+    async compact(): Promise<number> {
+      await hydrate()
+      if (activeFlush) {
+        await activeFlush
+      }
+
+      const completedCount = operations.filter(
+        (operation) => operation.status === SyncOperationStatuses.Completed,
+      ).length
+
+      if (completedCount === 0) {
+        return 0
+      }
+
+      operations = operations.filter(
+        (operation) => operation.status !== SyncOperationStatuses.Completed,
+      )
+      await persist()
+      return completedCount
+    },
+
     async remove(id: string): Promise<boolean> {
       await hydrate()
 

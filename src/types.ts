@@ -74,6 +74,7 @@ export interface SyncEngine {
   getFailed<T = unknown>(): Promise<SyncOperation<T>[]>
   retry(id: string): Promise<boolean>
   retryAllFailed(): Promise<number>
+  compact(): Promise<number>
   remove(id: string): Promise<boolean>
   clear(): Promise<void>
   flush(): Promise<FlushResult>
