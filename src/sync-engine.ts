@@ -10,6 +10,7 @@ import {
   type FlushResult,
   type InspectOptions,
   type InspectSnapshot,
+  type MetricsSnapshot,
   type MutateOptions,
   type SyncEngine,
   type SyncEngineOptions,
@@ -45,6 +46,14 @@ export function createSyncEngine<TContext = unknown>(
   let hydrated = false
   let activeFlush: Promise<FlushResult> | null = null
   const mergedHandlersMap = new Map<string, MergedOptimisticHandlers<TContext>>()
+
+  const metrics = {
+    totalQueued: 0,
+    totalSucceeded: 0,
+    totalFailed: 0,
+    totalRetried: 0,
+    lastSuccessfulFlushAt: null as Date | null,
+  }
 
   async function hydrate(): Promise<void> {
     if (hydrated) {
@@ -113,9 +122,14 @@ export function createSyncEngine<TContext = unknown>(
         mergedHandlersMap.delete(operation.id)
         emitLifecycle(SyncEventTypes.Succeeded, operation)
         emitQueueChanged()
+        metrics.totalSucceeded += 1
         result.successful += 1
       } catch (error) {
         operation.retries += 1
+
+        if (maxRetries > 0) {
+          metrics.totalRetried += 1
+        }
 
         if (operation.retries >= maxRetries) {
           operation.status = SyncOperationStatuses.Failed
@@ -131,6 +145,7 @@ export function createSyncEngine<TContext = unknown>(
 
           emitLifecycle(SyncEventTypes.Failed, operation, error)
           emitQueueChanged()
+          metrics.totalFailed += 1
           result.failed += 1
         } else {
           operation.status = SyncOperationStatuses.Pending
@@ -140,6 +155,10 @@ export function createSyncEngine<TContext = unknown>(
           await delay(retry.getDelay(operation.retries))
         }
       }
+    }
+
+    if (result.successful > 0) {
+      metrics.lastSuccessfulFlushAt = new Date()
     }
 
     return result
@@ -224,6 +243,7 @@ export function createSyncEngine<TContext = unknown>(
 
       emitLifecycle(SyncEventTypes.Queued, operation as SyncOperation)
       emitQueueChanged()
+      metrics.totalQueued += 1
 
       return operation
     },
@@ -325,6 +345,20 @@ export function createSyncEngine<TContext = unknown>(
       }
 
       return snapshot
+    },
+
+    getMetrics(): MetricsSnapshot {
+      return {
+        totalQueued: metrics.totalQueued,
+        totalSucceeded: metrics.totalSucceeded,
+        totalFailed: metrics.totalFailed,
+        totalRetried: metrics.totalRetried,
+        averageRetries:
+          metrics.totalSucceeded > 0
+            ? metrics.totalRetried / metrics.totalSucceeded
+            : 0,
+        lastSuccessfulFlushAt: metrics.lastSuccessfulFlushAt,
+      }
     },
 
     async remove(id: string): Promise<boolean> {

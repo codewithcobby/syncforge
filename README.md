@@ -148,6 +148,7 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `retryAllFailed()`                | —                                                                          | `Promise<number>`                 | Re-queue all failed operations. Returns count of operations actually re-queued. Does not call `flush()`.                              |
 | `compact()`                       | —                                                                          | `Promise<number>`                 | Remove all `completed` operations from storage. Preserves `pending`, `syncing`, and `failed`. Returns count removed.                  |
 | `inspect(options?)`               | `options?`: `InspectOptions`                                               | `Promise<InspectSnapshot>`        | Read-only queue snapshot — status counts; optional filtered operation list via `operations`.                                          |
+| `getMetrics()`                    | —                                                                          | `MetricsSnapshot`                 | Synchronous session counters — queued, succeeded, failed, retried since engine creation. Not persisted across reload.                 |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -666,6 +667,61 @@ const supportView = await sync.inspect({ operations: ["failed"] })
 
 **Counts only by default** — safe when thousands of completed operations exist. Pass `operations: ["pending", "failed"]` (or other statuses) only when you need operation rows. Pair with `compact()` so `completed` counts stay manageable.
 
+## Queue metrics
+
+`getMetrics()` returns **cumulative session statistics** — what has happened since `createSyncEngine()`. It is synchronous and does not hydrate storage.
+
+```typescript
+const metrics = sync.getMetrics()
+// {
+//   totalQueued: 42,
+//   totalSucceeded: 38,
+//   totalFailed: 2,
+//   totalRetried: 15,
+//   averageRetries: 0.39,
+//   lastSuccessfulFlushAt: Date | null,
+// }
+```
+
+| API            | Answers                                             |
+| -------------- | --------------------------------------------------- |
+| `inspect()`    | What is in the queue **right now**? (point-in-time) |
+| `getMetrics()` | What has happened **this session**? (cumulative)    |
+
+### Session semantics
+
+- Counters start at zero on each `createSyncEngine()` call.
+- **Hydrated operations do not contribute to metrics.** Storage may already hold hundreds of completed operations after reload — metrics still read zero until new events occur this session.
+
+```typescript
+// Storage already contains 500 completed operations
+const sync = createSyncEngine({ storage })
+await sync.inspect() // completed: 500
+sync.getMetrics() // totalSucceeded: 0 — historical queue is not backfilled
+```
+
+- `totalQueued` increments on `mutate()` only — not on `retry(id)` re-queues.
+- `compact()`, `remove()`, and `clear()` do not change metrics.
+- `destroy()` clears the queue but **preserves** session metrics on that engine instance.
+- Metrics are **not persisted** across page reload or new engine instances.
+
+### Retry counting
+
+`totalRetried` counts **each failed transport send attempt** (`maxRetries > 0`). Example: fail, fail, then succeed → `totalSucceeded = 1`, `totalRetried = 2`, `averageRetries = 2`.
+
+`averageRetries` is derived at read time: `totalSucceeded > 0 ? totalRetried / totalSucceeded : 0`.
+
+Boundary cases:
+
+| `maxRetries` | After one failed flush | `totalFailed` | `totalRetried` |
+| ------------ | ---------------------- | ------------- | -------------- |
+| `0`          | terminal on first fail | `1`           | `0`            |
+| `1`          | terminal on first fail | `1`           | `1`            |
+
+`lastSuccessfulFlushAt` is set when a `flush()` batch completes with at least one success — useful for “when did the queue last make progress?”
+
+A future `getHealth()` (#13) may combine `inspect()` and `getMetrics()` with point-in-time health signals.
+
 ## Why use SyncForge?
 
 | You get                     | Why it matters                                                                                     |
@@ -720,6 +776,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] `useSyncSnapshot()` React hook
 - [x] `usePendingOperations()` / `useFailedOperations()` convenience hooks
 - [x] Large-queue stress validation and production guidance (v0.8)
+- [x] `getMetrics()` queue statistics
 
 ## License
 

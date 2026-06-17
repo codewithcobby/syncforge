@@ -4,6 +4,7 @@ export type {
   FlushResult,
   InspectOptions,
   InspectSnapshot,
+  MetricsSnapshot,
   MutateOptions,
   OptimisticApplyFn,
   OptimisticHandler,
