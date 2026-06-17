@@ -619,6 +619,39 @@ if (removed > 0) {
 
 `compact()` hydrates first, then waits for any active `flush()` to finish before removing completed operations. If persistence fails, the call rejects and storage remains unchanged; reload restores the persisted queue.
 
+## Production guidance — large queues
+
+SyncForge stores the **entire queue as one JSON document** in IndexedDB (or your `StorageAdapter`). Every `mutate()`, flush status transition, and `compact()` rewrites the full in-memory array to storage. Cost grows with queue size and payload size.
+
+### Operational playbook
+
+1. **Compact regularly** — call `compact()` after successful `flush()`, on app startup, or on a schedule. Large _completed_ backlogs slow hydration on every cold start.
+2. **Inspect counts only** — `await sync.inspect()` returns counts by default. Avoid `inspect({ operations: [...] })` on large queues unless you need specific operation rows.
+3. **In React** — prefer `useSyncSnapshot({ operations: ["pending", "failed"] })` over full snapshots when the UI only needs active work.
+4. **Keep pending batches reasonable** — flush re-persists the full queue on **each** status transition (~2 writes per successful operation). A small pending batch on a large completed backlog still triggers full-array writes.
+
+### Realistic risk profile
+
+| Queue shape                                                      | Primary risk                                                           |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Large completed backlog (e.g. 50k+ without `compact()`)          | Slow `hydrate()` / startup                                             |
+| Small pending on large total (e.g. 500 pending, 99.5k completed) | Flush write amplification (`saveOperations` called ~2× per pending op) |
+| Large payloads (10 KB+ per operation)                            | Memory pressure during JSON parse/stringify                            |
+
+### Benchmarks
+
+See [`docs/benchmarks/large-queue-methodology.md`](./docs/benchmarks/large-queue-methodology.md) for how to run local benchmarks and reference measurements.
+
+> Reference measurements are **not guarantees**. Results depend on machine, Node/browser version, and payload size. Re-run with `pnpm benchmark:queue`.
+
+### Not solved in v0.8
+
+- Sharded / per-operation IndexedDB layout
+- Streaming or Worker-based flush
+- Automatic compaction policies
+
+If benchmarks show unacceptable flush write amplification in your app, track a separate optimization issue (e.g. flush persist coalescing) — Issue #11 validates behavior; it does not require engine changes when results are acceptable.
+
 ## Queue inspection
 
 For diagnostics and support tooling, `inspect()` returns a read-only snapshot of queue state — no persistence, no side effects. Point-in-time counts for every status; does not wait for an active `flush()` to finish.
@@ -686,6 +719,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] `queue:changed` event
 - [x] `useSyncSnapshot()` React hook
 - [x] `usePendingOperations()` / `useFailedOperations()` convenience hooks
+- [x] Large-queue stress validation and production guidance (v0.8)
 
 ## License
 
