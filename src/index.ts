@@ -2,6 +2,14 @@ export { createSyncEngine } from "./sync-engine.js"
 
 export type {
   FlushResult,
+  HealthOptions,
+  HealthSignal,
+  HealthSnapshot,
+  HealthStatus,
+  HealthThresholds,
+  InspectOptions,
+  InspectSnapshot,
+  MetricsSnapshot,
   MutateOptions,
   OptimisticApplyFn,
   OptimisticHandler,
@@ -12,6 +20,8 @@ export type {
   SyncOperation,
   SyncOperationStatus,
 } from "./types.js"
+
+export { DEFAULT_HEALTH_THRESHOLDS } from "./health.js"
 
 export { SyncOperationStatuses } from "./types.js"
 
@@ -27,6 +37,12 @@ export type { Queue } from "./queue.js"
 export { createMemoryStorage } from "./storage.js"
 export { createIndexedDbStorage } from "./indexeddb-storage.js"
 export type { IndexedDbStorageOptions } from "./indexeddb-storage.js"
+export { createLocalStorageStorage } from "./localstorage-storage.js"
+export type { LocalStorageStorageOptions } from "./localstorage-storage.js"
+export { createAsyncStorageAdapter } from "./asyncstorage-adapter.js"
+export type { AsyncStorageAdapterOptions, AsyncStorageLike } from "./asyncstorage-adapter.js"
+export { createCapacitorStorageAdapter } from "./capacitor-storage-adapter.js"
+export type { CapacitorStorageAdapterOptions, PreferencesLike } from "./capacitor-storage-adapter.js"
 export { resolveHandlers, hasHandlers } from "./optimistic.js"
 export type { MergedOptimisticHandlers } from "./optimistic.js"
 export { createEventEmitter, SyncEventTypes } from "./events.js"

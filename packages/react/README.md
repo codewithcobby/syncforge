@@ -20,7 +20,7 @@ You keep your existing API. You define operation labels (`"createOrder"`, `"upda
 | Package                                                | Role                                                                                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | [`syncforge`](https://www.npmjs.com/package/syncforge) | Core engine — `createSyncEngine`, storage, transport, retries ([docs](https://github.com/codewithcobby/syncforge#readme)) |
-| `syncforge-react`                                     | Provider + hooks for React apps (this package)                                                                            |
+| `syncforge-react`                                      | Provider + hooks for React apps (this package)                                                                            |
 
 This README is self-contained for React. For architecture diagrams, Node/SSR notes, and framework-agnostic usage, see the [SyncForge repository](https://github.com/codewithcobby/syncforge).
 
@@ -223,12 +223,15 @@ With `autoSync: true` (default), going back online triggers `flush()` automatica
 
 ## Hooks
 
-| Hook              | Returns                      | Use when                                                                            |
-| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
-| `useSyncEngine()` | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
-| `useSyncMutate()` | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
-| `useSyncFlush()`  | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
-| `useSyncStatus()` | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
+| Hook                     | Returns                      | Use when                                                                            |
+| ------------------------ | ---------------------------- | ----------------------------------------------------------------------------------- |
+| `useSyncEngine()`        | `SyncEngine`                 | Call `mutate()`, subscribe with `on()` / `off()`, or call `engine.flush()` directly |
+| `useSyncMutate()`        | `SyncEngine["mutate"]`       | Queue mutations with `optimisticData` and optional inline handler overrides         |
+| `useSyncFlush()`         | `() => Promise<FlushResult>` | User clicks “Sync now” and you want `isSyncing` to reflect that manual flush        |
+| `useSyncStatus()`        | `SyncStatus`                 | Show pending count, sync activity, or last failed operation in the UI               |
+| `useSyncSnapshot()`      | `InspectSnapshot`            | Full queue snapshot (`pending`, `failed`, `completed`, …) with automatic re-renders |
+| `usePendingOperations()` | `SyncOperation[]`            | List pending operations for retry/admin UIs                                         |
+| `useFailedOperations()`  | `SyncOperation[]`            | List failed operations for retry panels                                             |
 
 All hooks throw if used outside `SyncForgeProvider`.
 
@@ -245,6 +248,72 @@ const status = useSyncStatus()
 | `lastError`    | `{ operation, timestamp } \| null` | Most recent `operation:failed` event                            |
 
 `pendingCount` updates on sync lifecycle events: `operation:queued`, `operation:syncing`, `operation:succeeded`, `operation:failed`. It does **not** include a `revision` field — optimistic UI re-renders are driven by your own store or by subscribing to optimistic events (below).
+
+### `useSyncSnapshot()`
+
+Full queue snapshot backed by `useSyncExternalStore` and the core `queue:changed` event. Re-renders when queue membership or status changes — including after `compact()`, `remove()`, and `clear()` — without manual `engine.on()` wiring or revision counters.
+
+```tsx
+import { useSyncSnapshot } from "syncforge-react"
+
+function QueuePanel() {
+  const snapshot = useSyncSnapshot()
+
+  return (
+    <div>
+      {snapshot.pending} pending · {snapshot.failed} failed
+    </div>
+  )
+}
+```
+
+Optional `InspectOptions` passthrough (e.g. `{ operations: ["failed"] }`) attaches filtered operation lists from `engine.inspect()`.
+
+| Field         | Type              | Meaning                                                                          |
+| ------------- | ----------------- | -------------------------------------------------------------------------------- |
+| `pending`     | `number`          | Operations waiting to sync                                                       |
+| `failed`      | `number`          | Operations that exceeded max retries                                             |
+| `completed`   | `number`          | Successfully synced operations                                                   |
+| `syncing`     | `number`          | Operations currently in flight                                                   |
+| `total`       | `number`          | All operations in the queue                                                      |
+| `isSyncing`   | `boolean`         | `true` when `syncing > 0` (queue-only; does not include provider flush tracking) |
+| `operations?` | `SyncOperation[]` | Present when `options.operations` is set                                         |
+
+**`useSyncStatus()` vs `useSyncSnapshot()`:** use status for lightweight pending/sync UI and `lastError`; use snapshot for full queue counts and inspection UIs. Optimistic **business data** remains app-owned — the hook reflects **queue** state only.
+
+### `usePendingOperations()` / `useFailedOperations()`
+
+Thin wrappers over `useSyncSnapshot({ operations: [...] })`. Return shallow copies of queue operations — same read-only guarantee as `inspect()`. Mutations (`retry`, `remove`) stay on `engine` via `useSyncEngine()`.
+
+```tsx
+import { usePendingOperations, useFailedOperations } from "syncforge-react"
+
+function RetryPanel() {
+  const failed = useFailedOperations()
+  const pending = usePendingOperations()
+
+  return (
+    <ul>
+      {failed.map((op) => (
+        <li key={op.id}>
+          {op.type} — {String(op.lastError)}
+        </li>
+      ))}
+    </ul>
+  )
+}
+```
+
+| Hook                     | Equivalent core API   |
+| ------------------------ | --------------------- |
+| `usePendingOperations()` | `engine.getPending()` |
+| `useFailedOperations()`  | `engine.getFailed()`  |
+
+Operations in `syncing` status are not included in pending — matches `getPending()` behavior.
+
+**Tradeoff:** Using both hooks in the same tree registers two `queue:changed` listeners (one per filter). Each queue mutation triggers two `inspect()` calls. Acceptable for typical retry UIs; use `useSyncSnapshot()` alone if you need custom filters or fewer subscriptions.
+
+**Read-only:** Do not mutate returned operation objects — they are shallow copies and must not affect the queue.
 
 ### Optimistic events
 
@@ -302,6 +371,9 @@ Returns the **same** `SyncEngine` reference passed to the provider.
 | `getPending()`                               | List operations with status `pending`                                                        |
 | `getFailed()`                                | List operations with status `failed`                                                         |
 | `retry(id)`                                  | Re-queue a failed operation (clears `lastError`; does not re-run `apply`)                    |
+| `retryAllFailed()`                           | Re-queue all failed operations; returns count of operations actually re-queued               |
+| `compact()`                                  | Remove completed operations from storage; returns count removed                              |
+| `inspect(options?)`                          | Read-only queue snapshot (counts; optional `operations` filter for shallow copies)           |
 | `on(type, listener)` / `off(type, listener)` | Lifecycle events (advanced)                                                                  |
 | `remove(id)` / `clear()` / `destroy()`       | Queue management                                                                             |
 
@@ -342,8 +414,9 @@ Read-only UI state from lifecycle events + optional tracked flush. Prefer `const
 | `operation:succeeded`  | Transport resolved                     |
 | `operation:rollback`   | After rollback on terminal failure     |
 | `operation:failed`     | `maxRetries` exceeded                  |
+| `queue:changed`        | After any successful queue mutation    |
 
-Event shape: `{ type, operation, timestamp }`. Import `SyncEventTypes` from `syncforge` for constants.
+Event shape: operation events carry `{ type, operation, timestamp, error? }`. `queue:changed` carries `{ type, timestamp }` only. Import `SyncEventTypes` from `syncforge` for constants.
 
 ## Try it
 

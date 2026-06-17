@@ -30,17 +30,23 @@ export function SyncForgeProvider({ engine, children }: SyncForgeProviderProps) 
 
   useEffect(() => {
     const addSyncing = (event: SyncEvent) => {
-      setSyncingIds((ids) => new Set(ids).add(event.operation.id))
+      if (!event.operation) {
+        return
+      }
+      setSyncingIds((ids) => new Set(ids).add(event.operation!.id))
       bumpStatus()
     }
 
     const removeSyncing = (event: SyncEvent) => {
+      if (!event.operation) {
+        return
+      }
       setSyncingIds((ids) => {
-        if (!ids.has(event.operation.id)) {
+        if (!ids.has(event.operation!.id)) {
           return ids
         }
         const next = new Set(ids)
-        next.delete(event.operation.id)
+        next.delete(event.operation!.id)
         return next
       })
       bumpStatus()

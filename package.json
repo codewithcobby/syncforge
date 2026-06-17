@@ -1,6 +1,6 @@
 {
   "name": "syncforge",
-  "version": "0.5.1",
+  "version": "0.9.2",
   "description": "A framework-agnostic offline-first engine for queuing, persisting, and synchronizing mutations across unreliable networks.",
   "license": "MIT",
   "author": "Frank K. Abrokwa (codewithcobby)",
@@ -25,8 +25,10 @@
     "build:all": "pnpm --filter syncforge --filter syncforge-react run build",
     "watch": "tsup --watch",
     "test": "vitest run",
+    "test:stress": "STRESS=1 vitest run --config vitest.stress.config.ts",
     "test:all": "pnpm --filter syncforge --filter syncforge-react run test",
     "test:watch": "vitest",
+    "benchmark:queue": "tsx scripts/benchmark-large-queue.ts",
     "clean": "rm -rf dist",
     "clean:all": "pnpm run clean && pnpm --filter syncforge-react run clean",
     "ci": "pnpm run build:all && pnpm run test:all"
@@ -41,7 +43,9 @@
     "indexeddb"
   ],
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "fake-indexeddb": "^6.2.5",
+    "tsx": "^4.20.3",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

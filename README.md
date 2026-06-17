@@ -32,11 +32,11 @@ Maintained by Frank K. Abrokwa ([@codewithcobby](https://github.com/codewithcobb
 
 SyncForge is currently in **active development**.
 
-| Status              | Details                                                                                                                                                                                |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Status              | Details                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Implemented         | Mutation queue, transport adapter, memory & IndexedDB storage, auto sync on reconnect, retries, lifecycle events, optimistic updates, [`syncforge-react`](./packages/react/README.md) |
 | Tested              | Core engine, IndexedDB persistence, auto sync, retry strategies, optimistic handlers, [`syncforge-react` hooks](./packages/react/README.md#hooks)                                     |
-| Planned before v1.0 | Example ecosystem expansion                                                                                                                                                            |
+| Planned before v1.0 | Example ecosystem expansion                                                                                                                                                           |
 
 ## Installation
 
@@ -145,6 +145,11 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `getPending()`                    | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `pending`.                                                                                                     |
 | `getFailed()`                     | —                                                                          | `Promise<SyncOperation[]>`        | Operations with status `failed` (terminal transport failure).                                                                         |
 | `retry(id)`                       | `id`: `string`                                                             | `Promise<boolean>`                | Re-queue a failed operation (`pending`, `retries = 0`, clears `lastError`). Does not re-run `apply`.                                  |
+| `retryAllFailed()`                | —                                                                          | `Promise<number>`                 | Re-queue all failed operations. Returns count of operations actually re-queued. Does not call `flush()`.                              |
+| `compact()`                       | —                                                                          | `Promise<number>`                 | Remove all `completed` operations from storage. Preserves `pending`, `syncing`, and `failed`. Returns count removed.                  |
+| `inspect(options?)`               | `options?`: `InspectOptions`                                               | `Promise<InspectSnapshot>`        | Read-only queue snapshot — status counts; optional filtered operation list via `operations`.                                          |
+| `getMetrics()`                    | —                                                                          | `MetricsSnapshot`                 | Synchronous session counters — queued, succeeded, failed, retried since engine creation. Not persisted across reload.                 |
+| `getHealth(options?)`             | `options?`: `HealthOptions`                                                | `Promise<HealthSnapshot>`         | Read-only operational health snapshot — queue signals, session failure rate, storage estimate, status, and `breachedSignals`.         |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -157,10 +162,34 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 
 #### Storage adapters
 
-| Factory                            | Options                                                                  | Environment                                       |
-| ---------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
-| `createMemoryStorage()`            | —                                                                        | Node, tests, anywhere (in-memory; lost on reload) |
-| `createIndexedDbStorage(options?)` | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`) | Browser only (IndexedDB)                          |
+**Full guide:** [docs/storage-adapters.md](./docs/storage-adapters.md) — decision matrix, per-adapter setup, migration, and limits.
+
+| Environment  | Recommended adapter               |
+| ------------ | --------------------------------- |
+| Browser      | `createIndexedDbStorage()`        |
+| React Native | `createAsyncStorageAdapter()`     |
+| Capacitor    | `createCapacitorStorageAdapter()` |
+| Tests / Node | `createMemoryStorage()`           |
+
+| Adapter      | Factory                           | Environment      | Durability | Size limit | Package                                                   |
+| ------------ | --------------------------------- | ---------------- | ---------- | ---------- | --------------------------------------------------------- |
+| Memory       | `createMemoryStorage()`           | Tests, Node, SSR | None       | RAM        | `syncforge`                                               |
+| IndexedDB    | `createIndexedDbStorage()`        | Browser          | Full       | Large      | `syncforge`                                               |
+| LocalStorage | `createLocalStorageStorage()`     | Browser          | Full       | ~5MB       | `syncforge`                                               |
+| AsyncStorage | `createAsyncStorageAdapter()`     | React Native     | Full       | Platform   | `syncforge` + `@react-native-async-storage/async-storage` |
+| Capacitor    | `createCapacitorStorageAdapter()` | Hybrid mobile    | Full       | Platform   | `syncforge` + `@capacitor/preferences`                    |
+
+| Factory                                  | Options                                                                                           | Environment                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `createMemoryStorage()`                  | —                                                                                                 | Node, tests, anywhere (in-memory; lost on reload) |
+| `createIndexedDbStorage(options?)`       | `dbName?` (default `"syncforge"`), `storeName?` (default `"operations"`)                          | Browser only (IndexedDB)                          |
+| `createLocalStorageStorage(options?)`    | `key?` (default `"syncforge-queue"`), `prefix?` (default `""`)                                    | Browser only (localStorage)                       |
+| `createAsyncStorageAdapter(options)`     | `asyncStorage` (required), `key?`, `prefix?` — inject `@react-native-async-storage/async-storage` | React Native (injected AsyncStorage)              |
+| `createCapacitorStorageAdapter(options)` | `preferences` (required), `key?`, `prefix?` — inject `@capacitor/preferences`                     | Capacitor (injected Preferences)                  |
+
+**Examples:** [react-offline-orders](./examples/react-offline-orders) (IndexedDB) · [localstorage](./examples/localstorage) · [react-native-asyncstorage](./examples/react-native-asyncstorage) · [capacitor-preferences](./examples/capacitor-preferences) · [examples index](./examples/README.md)
+
+**Migrating adapters:** manual load → `reviveOperations()` → save — see [migration guide](./docs/storage-adapters.md#migrating-between-adapters).
 
 #### Lifecycle events (`SyncEventTypes`)
 
@@ -173,7 +202,15 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `operation:rollback`   | After rollback handler on terminal failure                |
 | `operation:failed`     | Max retries exceeded (after rollback when handlers exist) |
 
-Event payload: `{ type, operation, timestamp, error? }`. Rollback and failed events include `error`.
+**Queue lifecycle** (separate from operation lifecycle):
+
+| Event           | When                                                                |
+| --------------- | ------------------------------------------------------------------- |
+| `queue:changed` | After any successful queue mutation (membership, status, or counts) |
+
+Operation events carry `{ type, operation, timestamp, error? }`. `queue:changed` carries `{ type, timestamp }` only — no `operation` field. Read-only APIs (`inspect()`, `hydrate()`) do not emit.
+
+`retryAllFailed()` emits one `queue:changed` per successfully retried operation (same as calling `retry(id)` in a loop).
 
 #### Event ordering (public contract)
 
@@ -188,6 +225,8 @@ Event payload: `{ type, operation, timestamp, error? }`. Rollback and failed eve
 **Terminal transport failure:** `operation:syncing` → `operation:rollback` → `operation:failed`
 
 **`retry(id)` on failed operation:** status reset → persist → `operation:queued` (no re-apply)
+
+**`retryAllFailed()`:** per operation, same as `retry(id)`; sequential when multiple ops
 
 #### Retry strategies
 
@@ -238,7 +277,9 @@ When `jitter: true` on exponential backoff, the actual delay is randomized betwe
 
 See [React integration](#react-integration) and the [`syncforge-react` README](./packages/react/README.md).
 
-### Browser example
+### IndexedDB adapter
+
+Production browser default. See [IndexedDB guide](./docs/storage-adapters.md#indexeddb) for options, limits, and migration.
 
 ```typescript
 import { createIndexedDbStorage, createSyncEngine } from "syncforge"
@@ -273,9 +314,108 @@ console.log(result) // { successful: 1, failed: 0 }
 
 `createIndexedDbStorage()` is **browser-only** — it requires IndexedDB (not available in Node.js or SSR). Use `createMemoryStorage()` for tests, scripts, and server environments. Set a unique `dbName` per app on the same origin to avoid queue collisions.
 
+Runnable demo: [examples/react-offline-orders](./examples/react-offline-orders/README.md).
+
+For lightweight browser apps that do not need IndexedDB capacity, see [LocalStorage adapter](#localstorage-adapter) below (`createLocalStorageStorage()`).
+
 **Auto sync on reconnect** is **enabled by default** in browsers (`autoSync` defaults to `true`). When the network comes back, SyncForge calls `flush()` for you — no `window.addEventListener("online", ...)` boilerplate. Set `autoSync: false` for full manual control. Node.js and SSR ignore this option.
 
-### Node.js and tests
+### LocalStorage adapter
+
+For small widgets, prototypes, and simple apps that do not need IndexedDB. See [LocalStorage guide](./docs/storage-adapters.md#localstorage) and [example snippet](./examples/localstorage/README.md).
+
+```typescript
+import { createLocalStorageStorage, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  storage: createLocalStorageStorage({ prefix: "my-app:", key: "syncforge-queue" }),
+  transport: myTransport,
+})
+```
+
+**Prefix and key:** resolved storage key is `` `${prefix ?? ""}${key ?? "syncforge-queue"}` ``. Include any separator in `prefix` (e.g. `"my-app:"`) — SyncForge concatenates as-is and does not insert colons or dashes.
+
+**When to use:** prototypes, embedded widgets, small queues, quick browser testing without `fake-indexeddb`.
+
+**When not to use:** large queues, payloads larger than a few KB each, or anything approaching [large-queue guidance](./docs/benchmarks/large-queue-methodology.md). Prefer `createIndexedDbStorage()` for production PWAs and offline-first apps.
+
+**Limits:** ~5MB per origin; underlying `localStorage` API is synchronous (the adapter wraps it in async methods only). The full queue is rewritten as one JSON document on every mutation — same model as IndexedDB.
+
+**Isolation:** use a unique `prefix` (with separator) or `key` per app/widget on shared origins.
+
+**Quota errors:** when storage is full, `saveOperations()` throws `StorageError`:
+
+> LocalStorage quota exceeded (~5MB limit). Consider compact(), reducing queue size, or switching to createIndexedDbStorage().
+
+### React Native (AsyncStorage)
+
+Install `@react-native-async-storage/async-storage` in your app (not a SyncForge core dependency — inject the instance). See [AsyncStorage guide](./docs/storage-adapters.md#asyncstorage).
+
+```bash
+npm install @react-native-async-storage/async-storage
+```
+
+```typescript
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { createAsyncStorageAdapter, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  storage: createAsyncStorageAdapter({ asyncStorage: AsyncStorage, key: "syncforge-queue" }),
+  transport: myTransport,
+  autoSync: false,
+})
+```
+
+Pass the full AsyncStorage object — SyncForge uses only `getItem`, `setItem`, and optionally `removeItem`. Other methods (`multiGet`, `mergeItem`, `clear`, etc.) are ignored.
+
+**Prefix and key:** same rules as [LocalStorage](#localstorage-adapter) — `` `${prefix ?? ""}${key ?? "syncforge-queue"}` ``.
+
+**Reconnect / flush:** React Native has no `window` `online` event. Set `autoSync: false` and call `sync.flush()` when connectivity returns (e.g. via `@react-native-community/netinfo`). Optionally flush on `AppState` `active` when the app returns to foreground. See [examples/react-native-asyncstorage](./examples/react-native-asyncstorage/README.md).
+
+**Limits:** same single-document rewrite model as other adapters; prefer smaller queues and run `compact()` periodically. Use `getHealth()` to monitor growth. IndexedDB is not available on RN.
+
+**Empty queue:** when injected AsyncStorage supports `removeItem`, SyncForge clears the storage key instead of persisting `"[]"`.
+
+### Capacitor (Preferences)
+
+Install `@capacitor/preferences` in your app (not a SyncForge core dependency — inject the instance). See [Capacitor guide](./docs/storage-adapters.md#capacitor).
+
+```bash
+npm install @capacitor/preferences
+```
+
+```typescript
+import { Preferences } from "@capacitor/preferences"
+import { createCapacitorStorageAdapter, createSyncEngine } from "syncforge"
+
+const sync = createSyncEngine({
+  storage: createCapacitorStorageAdapter({ preferences: Preferences, key: "syncforge-queue" }),
+  transport: myTransport,
+  autoSync: false,
+})
+```
+
+Pass the full Preferences object — SyncForge uses only `get`, `set`, and optionally `remove`. Other methods (`configure`, `clear`, `keys`, `migrate`, etc.) are ignored.
+
+**When to use what:**
+
+| Backend                                    | Use when                                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Preferences** (this adapter)             | Default for Capacitor iOS/Android — native-backed key/value, simple setup                                                                            |
+| **IndexedDB / LocalStorage**               | Capacitor web builds only — same as browser adapters when running in a desktop browser                                                               |
+| **SQLite** (`@capacitor-community/sqlite`) | Not built into SyncForge — consider for large relational data or custom query needs; implement a custom `StorageAdapter` or watch for a future issue |
+
+**Prefix and key:** same rules as [LocalStorage](#localstorage-adapter) — `` `${prefix ?? ""}${key ?? "syncforge-queue"}` ``.
+
+**Reconnect / flush:** on native Capacitor, set `autoSync: false` and call `sync.flush()` when connectivity returns (e.g. via `@capacitor/network`). Optionally flush on `@capacitor/app` `appStateChange` when the app returns to foreground. See [examples/capacitor-preferences](./examples/capacitor-preferences/README.md).
+
+**Limits:** same single-document rewrite model as other adapters; prefer smaller queues and run `compact()` periodically. Use `getHealth()` to monitor growth.
+
+**Empty queue:** when injected Preferences supports `remove`, SyncForge clears the storage key instead of persisting `"[]"`.
+
+### Memory storage
+
+In-memory queue for tests, Node, and SSR — no persistence across reloads. See [Memory guide](./docs/storage-adapters.md#memory).
 
 ```typescript
 import { createMemoryStorage, createSyncEngine } from "syncforge"
@@ -420,14 +560,14 @@ flowchart LR
   Transport -->|REST · GraphQL · tRPC · custom| Backend
 ```
 
-| Layer                 | Responsibility                                                                                                                      |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Layer                 | Responsibility                                                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **Application**       | Calls `mutate()`, `flush()`, and subscribes to events — or use [`syncforge-react`](./packages/react/README.md) hooks in React apps |
-| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                               |
-| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                         |
-| **Storage Adapter**   | Persists the operation queue across reloads                                                                                         |
-| **Backend**           | Your existing API — SyncForge does not replace it                                                                                   |
-| **Persistence**       | Memory and IndexedDB storage adapters; more adapters may follow                                                                     |
+| **SyncForge Core**    | Queues operations, tracks status, retries, and emits lifecycle events                                                              |
+| **Transport Adapter** | Maps `operation.type` + `operation.payload` to your backend                                                                        |
+| **Storage Adapter**   | Persists the operation queue across reloads                                                                                        |
+| **Backend**           | Your existing API — SyncForge does not replace it                                                                                  |
+| **Persistence**       | Memory, IndexedDB, LocalStorage, AsyncStorage, and Capacitor Preferences adapters                                                  |
 
 ## How it works
 
@@ -545,7 +685,7 @@ SyncForge does **not** own your application state. You pass optional `context` a
 
 **On reload:** pending operations are hydrated from storage but **`apply` is not re-run**. Reconcile UI from your own state + `getPending()`. If a hydrated op later fails, registry rollback uses `optimisticData`.
 
-**Failed operations:** use `getFailed()` and `retry(id)` — resets to `pending`, clears `lastError`, does **not** re-run `apply`.
+**Failed operations:** use `getFailed()` and `retry(id)` — or `retryAllFailed()` for bulk recovery. Both reset to `pending`, clear `lastError`, and do **not** re-run `apply`.
 
 ```typescript
 const sync = createSyncEngine({
@@ -568,26 +708,221 @@ await sync.mutate("createOrder", order, {
   optimisticData: { tempId: order.id },
 })
 
-// After terminal failure:
+// After terminal failure — single operation:
 const failed = await sync.getFailed()
 if (failed.length > 0) {
   await sync.retry(failed[0].id)
+  await sync.flush()
+}
+
+// Bulk recovery:
+const retried = await sync.retryAllFailed()
+if (retried > 0) {
   await sync.flush()
 }
 ```
 
 In React, subscribe to `operation:optimistic` and `operation:rollback` via `useSyncEngine().on()` — `useSyncStatus()` stays sync-queue focused (no forced re-renders for optimistic UI). See [`syncforge-react` optimistic events](./packages/react/README.md#optimistic-events).
 
+## Queue compaction
+
+After a successful `flush()`, operations stay in storage with `status === "completed"` until removed. Long-lived PWAs can accumulate thousands of completed rows, slowing hydration and growing IndexedDB.
+
+Call `compact()` to remove completed operations while preserving `pending`, `syncing`, and `failed`:
+
+```typescript
+await sync.flush()
+const removed = await sync.compact()
+if (removed > 0) {
+  console.log(`Cleaned ${removed} completed operations`)
+}
+```
+
+**When to call:**
+
+- After successful `flush()` in batch workflows
+- On app startup (after the engine hydrates)
+- Periodically in long-lived PWAs
+
+`compact()` hydrates first, then waits for any active `flush()` to finish before removing completed operations. If persistence fails, the call rejects and storage remains unchanged; reload restores the persisted queue.
+
+## Production guidance — large queues
+
+SyncForge stores the **entire queue as one JSON document** in IndexedDB (or your `StorageAdapter`). Every `mutate()`, flush status transition, and `compact()` rewrites the full in-memory array to storage. Cost grows with queue size and payload size.
+
+### Operational playbook
+
+1. **Compact regularly** — call `compact()` after successful `flush()`, on app startup, or on a schedule. Large _completed_ backlogs slow hydration on every cold start.
+2. **Inspect counts only** — `await sync.inspect()` returns counts by default. Avoid `inspect({ operations: [...] })` on large queues unless you need specific operation rows.
+3. **In React** — prefer `useSyncSnapshot({ operations: ["pending", "failed"] })` over full snapshots when the UI only needs active work.
+4. **Keep pending batches reasonable** — flush re-persists the full queue on **each** status transition (~2 writes per successful operation). A small pending batch on a large completed backlog still triggers full-array writes.
+
+### Realistic risk profile
+
+| Queue shape                                                      | Primary risk                                                           |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Large completed backlog (e.g. 50k+ without `compact()`)          | Slow `hydrate()` / startup                                             |
+| Small pending on large total (e.g. 500 pending, 99.5k completed) | Flush write amplification (`saveOperations` called ~2× per pending op) |
+| Large payloads (10 KB+ per operation)                            | Memory pressure during JSON parse/stringify                            |
+
+### Benchmarks
+
+See [`docs/benchmarks/large-queue-methodology.md`](./docs/benchmarks/large-queue-methodology.md) for how to run local benchmarks and reference measurements.
+
+> Reference measurements are **not guarantees**. Results depend on machine, Node/browser version, and payload size. Re-run with `pnpm benchmark:queue`.
+
+### Not solved in v0.8
+
+- Sharded / per-operation IndexedDB layout
+- Streaming or Worker-based flush
+- Automatic compaction policies
+
+If benchmarks show unacceptable flush write amplification in your app, track a separate optimization issue (e.g. flush persist coalescing) — Issue #11 validates behavior; it does not require engine changes when results are acceptable.
+
+## Queue inspection
+
+For diagnostics and support tooling, `inspect()` returns a read-only snapshot of queue state — no persistence, no side effects. Point-in-time counts for every status; does not wait for an active `flush()` to finish.
+
+```typescript
+const snapshot = await sync.inspect()
+// { pending, failed, completed, syncing, total, isSyncing }
+
+const supportView = await sync.inspect({ operations: ["failed"] })
+// supportView.operations — shallow copies; mutating them does not affect the queue
+```
+
+**Counts only by default** — safe when thousands of completed operations exist. Pass `operations: ["pending", "failed"]` (or other statuses) only when you need operation rows. Pair with `compact()` so `completed` counts stay manageable.
+
+## Queue metrics
+
+`getMetrics()` returns **cumulative session statistics** — what has happened since `createSyncEngine()`. It is synchronous and does not hydrate storage.
+
+```typescript
+const metrics = sync.getMetrics()
+// {
+//   totalQueued: 42,
+//   totalSucceeded: 38,
+//   totalFailed: 2,
+//   totalRetried: 15,
+//   averageRetries: 0.39,
+//   lastSuccessfulFlushAt: Date | null,
+// }
+```
+
+| API            | Answers                                             |
+| -------------- | --------------------------------------------------- |
+| `inspect()`    | What is in the queue **right now**? (point-in-time) |
+| `getMetrics()` | What has happened **this session**? (cumulative)    |
+
+### Session semantics
+
+- Counters start at zero on each `createSyncEngine()` call.
+- **Hydrated operations do not contribute to metrics.** Storage may already hold hundreds of completed operations after reload — metrics still read zero until new events occur this session.
+
+```typescript
+// Storage already contains 500 completed operations
+const sync = createSyncEngine({ storage })
+await sync.inspect() // completed: 500
+sync.getMetrics() // totalSucceeded: 0 — historical queue is not backfilled
+```
+
+- `totalQueued` increments on `mutate()` only — not on `retry(id)` re-queues.
+- `compact()`, `remove()`, and `clear()` do not change metrics.
+- `destroy()` clears the queue but **preserves** session metrics on that engine instance.
+- Metrics are **not persisted** across page reload or new engine instances.
+
+### Retry counting
+
+`totalRetried` counts **each failed transport send attempt** (`maxRetries > 0`). Example: fail, fail, then succeed → `totalSucceeded = 1`, `totalRetried = 2`, `averageRetries = 2`.
+
+`averageRetries` is derived at read time: `totalSucceeded > 0 ? totalRetried / totalSucceeded : 0`.
+
+Boundary cases:
+
+| `maxRetries` | After one failed flush | `totalFailed` | `totalRetried` |
+| ------------ | ---------------------- | ------------- | -------------- |
+| `0`          | terminal on first fail | `1`           | `0`            |
+| `1`          | terminal on first fail | `1`           | `1`            |
+
+`lastSuccessfulFlushAt` is set when a `flush()` batch completes with at least one success — useful for “when did the queue last make progress?”
+
+## Queue health
+
+`getHealth()` returns an **operational verdict** — is the queue healthy right now, and which signals breached? It composes hydrated queue state (`inspect()` counts), session metrics (`getMetrics()` failure rate), and a cached UTF-8 JSON size estimate of the in-memory queue.
+
+```typescript
+const health = await sync.getHealth()
+// {
+//   queueSize: 42,
+//   pendingCount: 3,
+//   failedCount: 1,
+//   completedCount: 38,
+//   oldestPendingAgeMs: 120_000,
+//   storageBytesEstimate: 65_536,
+//   failureRate: 0.02,
+//   status: "healthy" | "degraded" | "unhealthy",
+//   breachedSignals: ["pendingCount", "oldestPendingAgeMs"],
+// }
+```
+
+| API            | Answers                                                             |
+| -------------- | ------------------------------------------------------------------- |
+| `inspect()`    | What is in the queue **right now**? (point-in-time)                 |
+| `getMetrics()` | What has happened **this session**? (cumulative)                    |
+| `getHealth()`  | Is the queue **healthy right now**, and **which signals breached**? |
+
+### Status semantics
+
+1. **`healthy`** — no threshold breached; `breachedSignals` is empty
+2. **`degraded`** — at least one soft threshold breached
+3. **`unhealthy`** — at least one hard threshold breached
+
+Worst-signal-wins: any unhealthy breach → `unhealthy`; else any degraded → `degraded`.
+
+### Default thresholds
+
+Overridable per call via `getHealth({ thresholds })`. See [`DEFAULT_HEALTH_THRESHOLDS`](./src/health.ts) export.
+
+| Signal                  | Degraded | Unhealthy |
+| ----------------------- | -------- | --------- |
+| `queueSize` (total)     | 10,000   | 50,000    |
+| `pendingCount`          | 100      | 500       |
+| `oldestPendingAgeMs`    | 1 hour   | 24 hours  |
+| `failureRate` (session) | 5%       | 20%       |
+| `storageBytesEstimate`  | 5 MB     | 20 MB     |
+
+`failureRate` only affects status when `totalSucceeded + totalFailed >= 10` (avoids `1 failed / 1 total` → instant unhealthy).
+
+### Support dashboard example
+
+```typescript
+const health = await sync.getHealth()
+if (health.status !== "healthy") {
+  console.warn("Queue health:", health.status, health.breachedSignals)
+  if (health.completedCount > health.pendingCount) {
+    console.info("Consider compact() — completed backlog inflates queueSize")
+  }
+}
+```
+
+### Important notes
+
+- `failureRate` is **session-only** — same semantics as `getMetrics()`, not a rolling window
+- `storageBytesEstimate` is serialized JSON size of the in-memory queue, not IndexedDB on-disk overhead; **cached and recomputed on queue mutations** — safe for periodic polling, not per-frame
+- Large `completedCount` inflates `queueSize` and `storageBytesEstimate` — run `compact()` before interpreting health (see [large-queue methodology](./docs/benchmarks/large-queue-methodology.md))
+- Thresholds are defaults for status pages, not SLAs — override via `getHealth({ thresholds })`
+- `getHealth()` is read-only — no persist, no events. Use `inspect().isSyncing` separately if you need sync-in-progress state
+
 ## Why use SyncForge?
 
-| You get                     | Why it matters                                                                                      |
-| --------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Offline-first by design** | User actions are captured even when the network is not available                                    |
+| You get                     | Why it matters                                                                                     |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Offline-first by design** | User actions are captured even when the network is not available                                   |
 | **Framework-agnostic**      | Use with React ([`syncforge-react`](./packages/react/README.md)), Vue, Svelte, or plain JavaScript |
-| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                          |
-| **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                 |
-| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                 |
-| **Small surface area**      | Not a database, not a state manager, not a networking framework                                     |
+| **Pluggable transport**     | Your API, your auth, your format — SyncForge does not care                                         |
+| **Persistent queue**        | Operations survive reloads (with a storage adapter)                                                |
+| **Observable lifecycle**    | Hook into events for UI, logging, or devtools later                                                |
+| **Small surface area**      | Not a database, not a state manager, not a networking framework                                    |
 
 **Good fit:** forms, carts, notes, field apps, or any flow where losing a mutation is worse than delaying it — including optimistic UI when you own the store.
 
@@ -618,6 +953,9 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Mutation queue
 - [x] Memory storage adapter
 - [x] IndexedDB storage adapter
+- [x] LocalStorage storage adapter
+- [x] React Native AsyncStorage adapter
+- [x] Capacitor Preferences storage adapter
 - [x] Transport adapter
 - [x] Lifecycle events
 - [x] Retry strategy interface
@@ -625,7 +963,15 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] Exponential and linear retry strategies
 - [x] Optimistic updates
 - [x] React integration — [`syncforge-react`](./packages/react/README.md)
-- [ ] `retryAllFailed()` bulk helper (v0.6+)
+- [x] `retryAllFailed()` bulk helper
+- [x] `compact()` queue cleanup
+- [x] `inspect()` queue snapshot
+- [x] `queue:changed` event
+- [x] `useSyncSnapshot()` React hook
+- [x] `usePendingOperations()` / `useFailedOperations()` convenience hooks
+- [x] Large-queue stress validation and production guidance (v0.8)
+- [x] `getMetrics()` queue statistics
+- [x] `getHealth()` operational health checks
 
 ## License
 

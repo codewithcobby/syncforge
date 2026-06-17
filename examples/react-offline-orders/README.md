@@ -26,6 +26,12 @@ import { createSyncEngine, createIndexedDbStorage } from "syncforge"
 import { SyncForgeProvider, useSyncStatus } from "syncforge-react"
 ```
 
+## Adapter guide
+
+- [IndexedDB guide](../../docs/storage-adapters.md#indexeddb)
+- [Storage adapters overview](../../docs/storage-adapters.md)
+- [Examples index](../README.md)
+
 ## Sandbox
 
 Open in StackBlitz (replace with published URL after first release):
