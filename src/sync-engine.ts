@@ -1,5 +1,12 @@
 import { createEventEmitter, SyncEventTypes, type SyncEventType } from "./events.js"
 import { TransportError } from "./errors.js"
+import {
+  computeFailureRate,
+  computeOldestPendingAgeMs,
+  computeStorageBytesEstimate,
+  evaluateHealth,
+  mergeHealthThresholds,
+} from "./health.js"
 import { hasHandlers, resolveHandlers, type MergedOptimisticHandlers } from "./optimistic.js"
 import { immediateRetryStrategy } from "./retry.js"
 import { reviveOperations } from "./serialize.js"
@@ -8,6 +15,8 @@ import { nanoid } from "nanoid"
 import {
   SyncOperationStatuses,
   type FlushResult,
+  type HealthOptions,
+  type HealthSnapshot,
   type InspectOptions,
   type InspectSnapshot,
   type MetricsSnapshot,
@@ -30,6 +39,46 @@ function isBrowser(): boolean {
   )
 }
 
+interface InspectCounts {
+  pending: number
+  failed: number
+  completed: number
+  syncing: number
+  total: number
+}
+
+function buildInspectCounts(operations: SyncOperation[]): InspectCounts {
+  let pending = 0
+  let failed = 0
+  let completed = 0
+  let syncing = 0
+
+  for (const operation of operations) {
+    switch (operation.status) {
+      case SyncOperationStatuses.Pending:
+        pending += 1
+        break
+      case SyncOperationStatuses.Failed:
+        failed += 1
+        break
+      case SyncOperationStatuses.Completed:
+        completed += 1
+        break
+      case SyncOperationStatuses.Syncing:
+        syncing += 1
+        break
+    }
+  }
+
+  return {
+    pending,
+    failed,
+    completed,
+    syncing,
+    total: operations.length,
+  }
+}
+
 export function createSyncEngine<TContext = unknown>(
   options: SyncEngineOptions<TContext> = {},
 ): SyncEngine {
@@ -45,6 +94,8 @@ export function createSyncEngine<TContext = unknown>(
   let operations: SyncOperation[] = []
   let hydrated = false
   let activeFlush: Promise<FlushResult> | null = null
+  let cachedStorageBytesEstimate = 0
+  let storageEstimateDirty = true
   const mergedHandlersMap = new Map<string, MergedOptimisticHandlers<TContext>>()
 
   const metrics = {
@@ -55,12 +106,25 @@ export function createSyncEngine<TContext = unknown>(
     lastSuccessfulFlushAt: null as Date | null,
   }
 
+  function markStorageEstimateDirty(): void {
+    storageEstimateDirty = true
+  }
+
+  function getStorageBytesEstimate(): number {
+    if (storageEstimateDirty) {
+      cachedStorageBytesEstimate = computeStorageBytesEstimate(operations)
+      storageEstimateDirty = false
+    }
+    return cachedStorageBytesEstimate
+  }
+
   async function hydrate(): Promise<void> {
     if (hydrated) {
       return
     }
     operations = reviveOperations(await storage.loadOperations())
     hydrated = true
+    markStorageEstimateDirty()
   }
 
   async function persist(): Promise<void> {
@@ -111,6 +175,7 @@ export function createSyncEngine<TContext = unknown>(
 
     for (const operation of pending) {
       operation.status = SyncOperationStatuses.Syncing
+      markStorageEstimateDirty()
       await persist()
       emitLifecycle(SyncEventTypes.Syncing, operation)
       emitQueueChanged()
@@ -118,6 +183,7 @@ export function createSyncEngine<TContext = unknown>(
       try {
         await transport.send(operation)
         operation.status = SyncOperationStatuses.Completed
+        markStorageEstimateDirty()
         await persist()
         mergedHandlersMap.delete(operation.id)
         emitLifecycle(SyncEventTypes.Succeeded, operation)
@@ -134,6 +200,7 @@ export function createSyncEngine<TContext = unknown>(
         if (operation.retries >= maxRetries) {
           operation.status = SyncOperationStatuses.Failed
           operation.lastError = error
+          markStorageEstimateDirty()
           await persist()
 
           const handlers = getRollbackHandlers(operation)
@@ -149,6 +216,7 @@ export function createSyncEngine<TContext = unknown>(
           result.failed += 1
         } else {
           operation.status = SyncOperationStatuses.Pending
+          markStorageEstimateDirty()
           await persist()
           emitLifecycle(SyncEventTypes.Queued, operation)
           emitQueueChanged()
@@ -187,6 +255,20 @@ export function createSyncEngine<TContext = unknown>(
     window.addEventListener("online", handleOnline)
   }
 
+  function getMetricsSnapshot(): MetricsSnapshot {
+    return {
+      totalQueued: metrics.totalQueued,
+      totalSucceeded: metrics.totalSucceeded,
+      totalFailed: metrics.totalFailed,
+      totalRetried: metrics.totalRetried,
+      averageRetries:
+        metrics.totalSucceeded > 0
+          ? metrics.totalRetried / metrics.totalSucceeded
+          : 0,
+      lastSuccessfulFlushAt: metrics.lastSuccessfulFlushAt,
+    }
+  }
+
   async function retryFailedOperation(id: string): Promise<boolean> {
     await hydrate()
 
@@ -198,6 +280,7 @@ export function createSyncEngine<TContext = unknown>(
     operation.status = SyncOperationStatuses.Pending
     operation.retries = 0
     operation.lastError = undefined
+    markStorageEstimateDirty()
     await persist()
     emitLifecycle(SyncEventTypes.Queued, operation)
     emitQueueChanged()
@@ -229,6 +312,7 @@ export function createSyncEngine<TContext = unknown>(
       }
 
       operations.push(operation as SyncOperation)
+      markStorageEstimateDirty()
       await persist()
 
       const handlers = resolveHandlers(type, optimisticHandlers, mutateOptions)
@@ -298,6 +382,7 @@ export function createSyncEngine<TContext = unknown>(
       operations = operations.filter(
         (operation) => operation.status !== SyncOperationStatuses.Completed,
       )
+      markStorageEstimateDirty()
       await persist()
       emitQueueChanged()
       return completedCount
@@ -306,35 +391,15 @@ export function createSyncEngine<TContext = unknown>(
     async inspect(options?: InspectOptions): Promise<InspectSnapshot> {
       await hydrate()
 
-      let pending = 0
-      let failed = 0
-      let completed = 0
-      let syncing = 0
-
-      for (const operation of operations) {
-        switch (operation.status) {
-          case SyncOperationStatuses.Pending:
-            pending += 1
-            break
-          case SyncOperationStatuses.Failed:
-            failed += 1
-            break
-          case SyncOperationStatuses.Completed:
-            completed += 1
-            break
-          case SyncOperationStatuses.Syncing:
-            syncing += 1
-            break
-        }
-      }
+      const counts = buildInspectCounts(operations)
 
       const snapshot: InspectSnapshot = {
-        pending,
-        failed,
-        completed,
-        syncing,
-        total: operations.length,
-        isSyncing: syncing > 0,
+        pending: counts.pending,
+        failed: counts.failed,
+        completed: counts.completed,
+        syncing: counts.syncing,
+        total: counts.total,
+        isSyncing: counts.syncing > 0,
       }
 
       if (options?.operations?.length) {
@@ -348,16 +413,44 @@ export function createSyncEngine<TContext = unknown>(
     },
 
     getMetrics(): MetricsSnapshot {
+      return getMetricsSnapshot()
+    },
+
+    async getHealth(options?: HealthOptions): Promise<HealthSnapshot> {
+      await hydrate()
+
+      const counts = buildInspectCounts(operations)
+      const metricsSnapshot = getMetricsSnapshot()
+      const now = options?.now ?? Date.now()
+      const thresholds = mergeHealthThresholds(options?.thresholds)
+
+      const oldestPendingAgeMs = computeOldestPendingAgeMs(operations, now)
+      const storageBytesEstimate = getStorageBytesEstimate()
+      const failureRate = computeFailureRate(metricsSnapshot)
+
+      const { status, breachedSignals } = evaluateHealth(
+        {
+          queueSize: counts.total,
+          pendingCount: counts.pending,
+          oldestPendingAgeMs,
+          failureRate,
+          storageBytesEstimate,
+          terminalOutcomes:
+            metricsSnapshot.totalSucceeded + metricsSnapshot.totalFailed,
+        },
+        thresholds,
+      )
+
       return {
-        totalQueued: metrics.totalQueued,
-        totalSucceeded: metrics.totalSucceeded,
-        totalFailed: metrics.totalFailed,
-        totalRetried: metrics.totalRetried,
-        averageRetries:
-          metrics.totalSucceeded > 0
-            ? metrics.totalRetried / metrics.totalSucceeded
-            : 0,
-        lastSuccessfulFlushAt: metrics.lastSuccessfulFlushAt,
+        queueSize: counts.total,
+        pendingCount: counts.pending,
+        failedCount: counts.failed,
+        completedCount: counts.completed,
+        oldestPendingAgeMs,
+        storageBytesEstimate,
+        failureRate,
+        status,
+        breachedSignals,
       }
     },
 
@@ -371,6 +464,7 @@ export function createSyncEngine<TContext = unknown>(
 
       mergedHandlersMap.delete(id)
       operations.splice(index, 1)
+      markStorageEstimateDirty()
       await persist()
       emitQueueChanged()
       return true
@@ -380,6 +474,7 @@ export function createSyncEngine<TContext = unknown>(
       await hydrate()
       operations = []
       mergedHandlersMap.clear()
+      markStorageEstimateDirty()
       await persist()
       emitQueueChanged()
     },
@@ -393,6 +488,7 @@ export function createSyncEngine<TContext = unknown>(
       await hydrate()
       operations = []
       mergedHandlersMap.clear()
+      markStorageEstimateDirty()
       await persist()
       emitQueueChanged()
     },

@@ -14,6 +14,7 @@ describe("createSyncEngine", () => {
     expect(typeof engine.compact).toBe("function");
     expect(typeof engine.inspect).toBe("function");
     expect(typeof engine.getMetrics).toBe("function");
+    expect(typeof engine.getHealth).toBe("function");
     expect(typeof engine.destroy).toBe("function");
     expect(typeof engine.on).toBe("function");
     expect(typeof engine.off).toBe("function");

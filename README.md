@@ -149,6 +149,7 @@ The first argument to `mutate()` is an **operation label** your app defines (e.g
 | `compact()`                       | —                                                                          | `Promise<number>`                 | Remove all `completed` operations from storage. Preserves `pending`, `syncing`, and `failed`. Returns count removed.                  |
 | `inspect(options?)`               | `options?`: `InspectOptions`                                               | `Promise<InspectSnapshot>`        | Read-only queue snapshot — status counts; optional filtered operation list via `operations`.                                          |
 | `getMetrics()`                    | —                                                                          | `MetricsSnapshot`                 | Synchronous session counters — queued, succeeded, failed, retried since engine creation. Not persisted across reload.                 |
+| `getHealth(options?)`             | `options?`: `HealthOptions`                                                | `Promise<HealthSnapshot>`         | Read-only operational health snapshot — queue signals, session failure rate, storage estimate, status, and `breachedSignals`.         |
 | `remove(id)`                      | `id`: `string`                                                             | `Promise<boolean>`                | Removes one operation by id. `true` if found.                                                                                         |
 | `clear()`                         | —                                                                          | `Promise<void>`                   | Removes all operations from the queue.                                                                                                |
 | `destroy()`                       | —                                                                          | `Promise<void>`                   | Removes the `online` listener (if any), then clears the queue.                                                                        |
@@ -720,7 +721,72 @@ Boundary cases:
 
 `lastSuccessfulFlushAt` is set when a `flush()` batch completes with at least one success — useful for “when did the queue last make progress?”
 
-A future `getHealth()` (#13) may combine `inspect()` and `getMetrics()` with point-in-time health signals.
+## Queue health
+
+`getHealth()` returns an **operational verdict** — is the queue healthy right now, and which signals breached? It composes hydrated queue state (`inspect()` counts), session metrics (`getMetrics()` failure rate), and a cached UTF-8 JSON size estimate of the in-memory queue.
+
+```typescript
+const health = await sync.getHealth()
+// {
+//   queueSize: 42,
+//   pendingCount: 3,
+//   failedCount: 1,
+//   completedCount: 38,
+//   oldestPendingAgeMs: 120_000,
+//   storageBytesEstimate: 65_536,
+//   failureRate: 0.02,
+//   status: "healthy" | "degraded" | "unhealthy",
+//   breachedSignals: ["pendingCount", "oldestPendingAgeMs"],
+// }
+```
+
+| API            | Answers                                                             |
+| -------------- | ------------------------------------------------------------------- |
+| `inspect()`    | What is in the queue **right now**? (point-in-time)                 |
+| `getMetrics()` | What has happened **this session**? (cumulative)                    |
+| `getHealth()`  | Is the queue **healthy right now**, and **which signals breached**? |
+
+### Status semantics
+
+1. **`healthy`** — no threshold breached; `breachedSignals` is empty
+2. **`degraded`** — at least one soft threshold breached
+3. **`unhealthy`** — at least one hard threshold breached
+
+Worst-signal-wins: any unhealthy breach → `unhealthy`; else any degraded → `degraded`.
+
+### Default thresholds
+
+Overridable per call via `getHealth({ thresholds })`. See [`DEFAULT_HEALTH_THRESHOLDS`](./src/health.ts) export.
+
+| Signal                  | Degraded | Unhealthy |
+| ----------------------- | -------- | --------- |
+| `queueSize` (total)     | 10,000   | 50,000    |
+| `pendingCount`          | 100      | 500       |
+| `oldestPendingAgeMs`    | 1 hour   | 24 hours  |
+| `failureRate` (session) | 5%       | 20%       |
+| `storageBytesEstimate`  | 5 MB     | 20 MB     |
+
+`failureRate` only affects status when `totalSucceeded + totalFailed >= 10` (avoids `1 failed / 1 total` → instant unhealthy).
+
+### Support dashboard example
+
+```typescript
+const health = await sync.getHealth()
+if (health.status !== "healthy") {
+  console.warn("Queue health:", health.status, health.breachedSignals)
+  if (health.completedCount > health.pendingCount) {
+    console.info("Consider compact() — completed backlog inflates queueSize")
+  }
+}
+```
+
+### Important notes
+
+- `failureRate` is **session-only** — same semantics as `getMetrics()`, not a rolling window
+- `storageBytesEstimate` is serialized JSON size of the in-memory queue, not IndexedDB on-disk overhead; **cached and recomputed on queue mutations** — safe for periodic polling, not per-frame
+- Large `completedCount` inflates `queueSize` and `storageBytesEstimate` — run `compact()` before interpreting health (see [large-queue methodology](./docs/benchmarks/large-queue-methodology.md))
+- Thresholds are defaults for status pages, not SLAs — override via `getHealth({ thresholds })`
+- `getHealth()` is read-only — no persist, no events. Use `inspect().isSyncing` separately if you need sync-in-progress state
 
 ## Why use SyncForge?
 
@@ -777,6 +843,7 @@ That keeps the library easy to reason about and easy to adopt one piece at a tim
 - [x] `usePendingOperations()` / `useFailedOperations()` convenience hooks
 - [x] Large-queue stress validation and production guidance (v0.8)
 - [x] `getMetrics()` queue statistics
+- [x] `getHealth()` operational health checks
 
 ## License
 
