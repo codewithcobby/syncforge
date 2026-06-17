@@ -155,6 +155,23 @@ export function createSyncEngine<TContext = unknown>(
     window.addEventListener("online", handleOnline)
   }
 
+  async function retryFailedOperation(id: string): Promise<boolean> {
+    await hydrate()
+
+    const operation = operations.find((item) => item.id === id)
+    if (!operation || operation.status !== SyncOperationStatuses.Failed) {
+      return false
+    }
+
+    operation.status = SyncOperationStatuses.Pending
+    operation.retries = 0
+    operation.lastError = undefined
+    await persist()
+    emitLifecycle(SyncEventTypes.Queued, operation)
+
+    return true
+  }
+
   return {
     on: emitter.on.bind(emitter),
     off: emitter.off.bind(emitter),
@@ -211,20 +228,22 @@ export function createSyncEngine<TContext = unknown>(
     },
 
     async retry(id: string): Promise<boolean> {
+      return retryFailedOperation(id)
+    },
+
+    async retryAllFailed(): Promise<number> {
       await hydrate()
-
-      const operation = operations.find((item) => item.id === id)
-      if (!operation || operation.status !== SyncOperationStatuses.Failed) {
-        return false
+      const failed = operations.filter(
+        (operation) => operation.status === SyncOperationStatuses.Failed,
+      )
+      let count = 0
+      for (const operation of failed) {
+        const retried = await retryFailedOperation(operation.id)
+        if (retried) {
+          count += 1
+        }
       }
-
-      operation.status = SyncOperationStatuses.Pending
-      operation.retries = 0
-      operation.lastError = undefined
-      await persist()
-      emitLifecycle(SyncEventTypes.Queued, operation)
-
-      return true
+      return count
     },
 
     async remove(id: string): Promise<boolean> {

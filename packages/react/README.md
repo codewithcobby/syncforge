@@ -20,7 +20,7 @@ You keep your existing API. You define operation labels (`"createOrder"`, `"upda
 | Package                                                | Role                                                                                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | [`syncforge`](https://www.npmjs.com/package/syncforge) | Core engine — `createSyncEngine`, storage, transport, retries ([docs](https://github.com/codewithcobby/syncforge#readme)) |
-| `syncforge-react`                                     | Provider + hooks for React apps (this package)                                                                            |
+| `syncforge-react`                                      | Provider + hooks for React apps (this package)                                                                            |
 
 This README is self-contained for React. For architecture diagrams, Node/SSR notes, and framework-agnostic usage, see the [SyncForge repository](https://github.com/codewithcobby/syncforge).
 
@@ -302,6 +302,7 @@ Returns the **same** `SyncEngine` reference passed to the provider.
 | `getPending()`                               | List operations with status `pending`                                                        |
 | `getFailed()`                                | List operations with status `failed`                                                         |
 | `retry(id)`                                  | Re-queue a failed operation (clears `lastError`; does not re-run `apply`)                    |
+| `retryAllFailed()`                           | Re-queue all failed operations; returns count of operations actually re-queued               |
 | `on(type, listener)` / `off(type, listener)` | Lifecycle events (advanced)                                                                  |
 | `remove(id)` / `clear()` / `destroy()`       | Queue management                                                                             |
 

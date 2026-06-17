@@ -9,6 +9,7 @@ import type { SyncOperation } from "./types.js"
  * retryable failure: operation:syncing → operation:queued
  * terminal failure: operation:syncing → operation:rollback → operation:failed
  * retry(id): status reset → persist → operation:queued
+ * retryAllFailed(): per operation, same as retry(id); sequential when multiple ops
  */
 export const SyncEventTypes = {
   Queued: "operation:queued",

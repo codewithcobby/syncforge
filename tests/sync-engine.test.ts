@@ -9,7 +9,8 @@ describe("createSyncEngine", () => {
     expect(typeof engine.getPending).toBe("function");
     expect(typeof engine.remove).toBe("function");
     expect(typeof engine.clear).toBe("function");
-    expect(typeof engine.flush).toBe("function");
+    expect(typeof engine.retry).toBe("function");
+    expect(typeof engine.retryAllFailed).toBe("function");
     expect(typeof engine.destroy).toBe("function");
     expect(typeof engine.on).toBe("function");
     expect(typeof engine.off).toBe("function");
